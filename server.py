@@ -21,12 +21,18 @@ import analyzer as analyzermod
 import tracker
 from intelligence.signals import (
     init_db, get_recent_signals, get_all_signals, get_command_state,
-    store_orderbook_snapshot, get_orderbook_snapshots
+    store_orderbook_snapshot, get_orderbook_snapshots,
+    get_managed_watchlist, get_all_latest_prices, get_price_snapshots,
+    get_all_latest_volatility, get_active_trading_signals as db_get_active_signals,
 )
 from intelligence.pulse import run_pulse_cycle
 from intelligence.beacon import run_beacon_cycle
 from intelligence.command import run_command_cycle, generate_market_signal, generate_orderflow_signal
 from intelligence.signals import store_signal
+import discovery
+import collector
+import volatility as volmod
+import signal_generator as siggen
 
 app = FastAPI(title="First Strike Intelligence", version="2.0.0")
 
@@ -47,11 +53,33 @@ async def startup():
 
 
 def _intel_loop():
-    """Background thread: runs intelligence cycles on a schedule."""
+    """Background thread: multi-market intelligence + data collection."""
     time.sleep(5)  # let server fully start first
+
+    # Initial discovery on startup
+    try:
+        print("[Intel] Running initial market discovery...")
+        discovery.refresh_watchlist()
+        print("[Intel] Backfilling historical data...")
+        result = collector.backfill_all_markets()
+        print(f"[Intel] Backfill: {result['markets_filled']} markets, {result['total_points']} data points")
+    except Exception as e:
+        print(f"[Intel] Startup error: {e}")
+
+    cycle = 0
     while True:
         try:
-            # Market + orderflow signals + OB snapshot every 2 minutes
+            # ── Every 2 minutes: collect prices + compute volatility + signals ──
+            print(f"[Intel] Cycle {cycle}: collecting snapshots...")
+            snap_result = collector.collect_all_snapshots()
+            print(f"[Intel] Collected {snap_result['collected']} snapshots")
+
+            volmod.compute_all_volatility()
+            signals = siggen.generate_trading_signals()
+            if signals:
+                print(f"[Intel] Generated {len(signals)} trading signal(s)")
+
+            # ── Legacy Iran market intelligence (keep existing) ──
             market = polyapi.find_iran_boots_market()
             if market:
                 ms = generate_market_signal(market)
@@ -65,19 +93,25 @@ def _intel_loop():
                         if ofs:
                             store_signal(ofs)
 
-            # News (Beacon) every 10 minutes
-            if int(time.time()) % 600 < 120:
+            # ── Every 10 minutes (cycle % 5 == 0): evaluate signals + beacon ──
+            if cycle % 5 == 0:
+                eval_result = siggen.evaluate_past_signals()
+                if eval_result["evaluated"]:
+                    print(f"[Intel] Evaluated {eval_result['evaluated']} signals")
                 run_beacon_cycle()
 
-            # Twitter (Pulse) every cycle (~2 min) if key present
-            run_pulse_cycle()
+            # ── Every 60 minutes (cycle % 30 == 0): refresh watchlist ──
+            if cycle % 30 == 0 and cycle > 0:
+                discovery.refresh_watchlist()
 
-            # Command aggregation every 2 minutes
+            # Twitter (Pulse) + Command every cycle
+            run_pulse_cycle()
             run_command_cycle()
 
         except Exception as e:
-            print(f"Intel loop error: {e}")
+            print(f"[Intel] Loop error: {e}")
 
+        cycle += 1
         time.sleep(120)  # 2 minute base interval
 
 
@@ -180,10 +214,104 @@ def get_performance():
 def refine_weights():
     predictions = tracker.load_predictions()
     current = tracker.load_weights()
+    resolved = [p for p in predictions if p.outcome is not None]
     new_weights = analyzermod.refine_weights(predictions, current)
     tracker.save_weights(new_weights)
-    return {"previous": current, "updated": new_weights,
-            "delta": {k: round(new_weights[k] - current[k], 5) for k in current}}
+    return {
+        "previous": current,
+        "updated": new_weights,
+        "delta": {k: round(new_weights[k] - current[k], 5) for k in current},
+        "predictions_used": len(resolved),
+    }
+
+@app.get("/api/weights")
+def get_weights():
+    """Return current algorithm weights with descriptions."""
+    weights = tracker.load_weights()
+    DESCRIPTIONS = {
+        "market_price":        "Baseline trust in the efficient market price",
+        "momentum":            "1-week price trend direction",
+        "volume_conviction":   "High volume = market consensus is stronger",
+        "liquidity_quality":   "Deep order book = less manipulation risk",
+        "time_decay":          "Proximity to resolution date",
+        "orderbook_imbalance": "Proximity-weighted bid vs ask pressure",
+        "trade_flow":          "Net direction of last 50 executed trades",
+    }
+    return {
+        "weights": weights,
+        "descriptions": DESCRIPTIONS,
+        "total": round(sum(weights.values()), 4),
+    }
+
+@app.get("/api/user/position")
+def get_user_position():
+    """
+    Fetch @easygoinga's open position on the Iran boots-on-ground market.
+    Requires POLYMARKET_WALLET env var set to their 0x wallet address.
+    """
+    import requests as req
+    wallet = os.environ.get("POLYMARKET_WALLET", "").strip()
+    if not wallet:
+        return {
+            "found": False,
+            "error": "Wallet not configured. Set POLYMARKET_WALLET env var to your 0x Polygon address.",
+        }
+    market = polyapi.find_iran_boots_market()
+    if not market:
+        return {"found": False, "error": "Market not found"}
+    try:
+        # Polymarket data API — positions endpoint
+        r = req.get(
+            "https://data-api.polymarket.com/positions",
+            params={"user": wallet, "sizeThreshold": "0"},
+            timeout=12,
+        )
+        if r.status_code != 200:
+            return {"found": False, "error": f"Polymarket API returned {r.status_code}"}
+        positions = r.json()
+        if not isinstance(positions, list):
+            return {"found": False, "error": "Unexpected response format"}
+
+        # Find position matching this market's condition IDs or token IDs
+        token_ids = set(market.clob_token_ids or [])
+        match = None
+        for pos in positions:
+            cid = str(pos.get("conditionId", "") or pos.get("asset", "") or "")
+            if cid in token_ids or (market.id and market.id in cid):
+                match = pos
+                break
+            # Also check by market question keyword
+            q = (pos.get("market", {}) or {}).get("question", "").lower()
+            if "iran" in q and ("boot" in q or "ground" in q or "troops" in q):
+                match = pos
+                break
+
+        if not match:
+            return {"found": False, "fetched_at": __import__('datetime').datetime.utcnow().isoformat()}
+
+        cur_price = market.yes_price
+        yes_shares = float(match.get("size", 0) or 0)
+        avg_price  = float(match.get("avgPrice", match.get("averagePrice", 0)) or 0)
+        outcome    = (match.get("outcome", "") or "").upper()
+        cost       = yes_shares * avg_price
+        pnl        = yes_shares * ((cur_price if outcome == "YES" else (1 - cur_price)) - avg_price)
+
+        return {
+            "found": True,
+            "position": {
+                "yes_shares":         yes_shares if outcome in ("YES", "") else 0,
+                "no_shares":          yes_shares if outcome == "NO" else 0,
+                "outcome":            outcome,
+                "avg_price_yes":      avg_price if outcome in ("YES", "") else None,
+                "avg_price_no":       avg_price if outcome == "NO" else None,
+                "current_yes_price":  cur_price,
+                "unrealized_pnl":     round(pnl, 4),
+                "total_cost":         round(cost, 4),
+            },
+            "fetched_at": __import__('datetime').datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        return {"found": False, "error": str(e)}
 
 @app.get("/api/search")
 def search_markets(q: str, limit: int = 10):
@@ -476,6 +604,170 @@ def get_system_status():
     }
 
 
+# ── Multi-Market API ──────────────────────────────────────────────────────────
+
+@app.get("/api/discovery/refresh")
+def api_discovery_refresh():
+    result = discovery.refresh_watchlist()
+    return result
+
+
+@app.get("/api/watchlist/managed")
+def api_managed_watchlist():
+    watchlist = get_managed_watchlist()
+    latest_prices = {p["market_id"]: p for p in get_all_latest_prices()}
+    for w in watchlist:
+        price_info = latest_prices.get(w["market_id"], {})
+        w["latest_yes_price"] = price_info.get("yes_price")
+        w["latest_snapshot_at"] = price_info.get("timestamp")
+    return {"watchlist": watchlist, "count": len(watchlist)}
+
+
+@app.post("/api/watchlist/add/{market_id}")
+def api_add_to_watchlist(market_id: str):
+    ok = discovery.add_market_manually(market_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Market not found")
+    return {"added": True, "market_id": market_id}
+
+
+@app.delete("/api/watchlist/remove/{market_id}")
+def api_remove_from_watchlist(market_id: str):
+    from intelligence.signals import deactivate_watchlist_entry
+    deactivate_watchlist_entry(market_id)
+    return {"removed": True, "market_id": market_id}
+
+
+@app.get("/api/prices/{market_id}")
+def api_price_history(market_id: str, hours: int = 24):
+    snapshots = get_price_snapshots(market_id, hours=hours)
+    return {"market_id": market_id, "snapshots": snapshots, "count": len(snapshots)}
+
+
+@app.get("/api/prices/all/latest")
+def api_all_latest_prices():
+    prices = get_all_latest_prices()
+    return {"prices": prices, "count": len(prices)}
+
+
+@app.get("/api/volatility/{market_id}")
+def api_volatility(market_id: str):
+    summary = volmod.get_market_volatility_summary(market_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail="No volatility data yet")
+    return summary
+
+
+@app.get("/api/volatility/opportunities")
+def api_volatility_opportunities(threshold: float = 1.5):
+    opps = volmod.detect_opportunities(threshold_z=threshold)
+    return {"opportunities": opps, "count": len(opps)}
+
+
+@app.get("/api/volatility/all")
+def api_all_volatility():
+    all_vol = get_all_latest_volatility()
+    return {"metrics": all_vol, "count": len(all_vol)}
+
+
+@app.get("/api/signals/trading")
+def api_trading_signals(hours: int = 24):
+    signals = db_get_active_signals(hours=hours)
+    return {"signals": signals, "count": len(signals)}
+
+
+@app.get("/api/signals/performance")
+def api_signal_performance():
+    return siggen.get_signal_performance_report()
+
+
+@app.post("/api/signals/evaluate")
+def api_evaluate_signals(background_tasks: BackgroundTasks):
+    background_tasks.add_task(siggen.evaluate_past_signals)
+    return {"triggered": True}
+
+
+@app.post("/api/collect")
+def api_collect_snapshots(background_tasks: BackgroundTasks):
+    background_tasks.add_task(collector.collect_all_snapshots)
+    return {"triggered": True}
+
+
+@app.get("/api/analysis/{market_id}")
+def api_analyze_market(market_id: str):
+    market = polyapi.get_market_by_id(market_id)
+    if not market:
+        raise HTTPException(status_code=404, detail="Market not found")
+    weights = tracker.load_weights()
+    pred = analyzermod.analyze_market(market, weights)
+    return {
+        "market": {
+            "id": market.id, "question": market.question,
+            "yes_price": market.yes_price, "volume": market.volume,
+            "liquidity": market.liquidity, "end_date": market.end_date,
+        },
+        "prediction": {
+            "predicted_yes_prob": pred.predicted_yes_prob,
+            "confidence": pred.confidence, "reasoning": pred.reasoning,
+        },
+        "signals": pred.signals,
+    }
+
+
+@app.get("/api/dashboard")
+def api_dashboard():
+    """Composite endpoint for the multi-market dashboard."""
+    watchlist = get_managed_watchlist()
+    latest_prices = {p["market_id"]: p for p in get_all_latest_prices()}
+    latest_vol = {v["market_id"]: v for v in get_all_latest_volatility()}
+    active_signals = db_get_active_signals(hours=24)
+    signal_map = {}
+    for s in active_signals:
+        mid = s["market_id"]
+        if mid not in signal_map or s["unix_ts"] > signal_map[mid]["unix_ts"]:
+            signal_map[mid] = s
+
+    markets = []
+    for w in watchlist:
+        mid = w["market_id"]
+        price_info = latest_prices.get(mid, {})
+        vol_info = latest_vol.get(mid, {})
+        sig_info = signal_map.get(mid)
+
+        markets.append({
+            "market_id": mid,
+            "question": w.get("question", ""),
+            "slug": w.get("slug", ""),
+            "yes_price": price_info.get("yes_price"),
+            "volume": w.get("volume", 0),
+            "liquidity": w.get("liquidity", 0),
+            "end_date": w.get("end_date"),
+            "z_score": vol_info.get("z_score"),
+            "std_dev": vol_info.get("std_dev"),
+            "bollinger_upper": vol_info.get("bollinger_upper"),
+            "bollinger_lower": vol_info.get("bollinger_lower"),
+            "mean_price": vol_info.get("mean_price"),
+            "active_signal": sig_info.get("signal_type") if sig_info else None,
+            "signal_strength": sig_info.get("strength") if sig_info else None,
+            "last_snapshot": price_info.get("timestamp"),
+        })
+
+    perf = siggen.get_signal_performance_report()
+    opps = volmod.detect_opportunities(threshold_z=1.5)
+
+    return {
+        "markets": markets,
+        "total_markets": len(markets),
+        "active_signals_count": len(active_signals),
+        "opportunities": opps[:5],
+        "signal_performance": {
+            "win_rate": perf.get("win_rate", 0),
+            "total_signals": perf.get("total_signals", 0),
+            "avg_profit": perf.get("avg_profit", 0),
+        },
+    }
+
+
 # ── Pages ─────────────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -485,10 +777,11 @@ def dashboard():
     with open(Path(__file__).parent / "static" / "index.html") as f:
         return f.read()
 
-@app.get("/command", response_class=HTMLResponse)
+@app.get("/command")
 def command_center():
-    with open(Path(__file__).parent / "static" / "command.html") as f:
-        return f.read()
+    """Command is now merged into the main dashboard — redirect there."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/", status_code=301)
 
 @app.get("/pulse", response_class=HTMLResponse)
 def pulse_desk():
@@ -508,6 +801,12 @@ def market_desk():
 @app.get("/orderflow", response_class=HTMLResponse)
 def orderflow_desk():
     with open(Path(__file__).parent / "static" / "desk-orderflow.html") as f:
+        return f.read()
+
+
+@app.get("/markets", response_class=HTMLResponse)
+def multi_market_dashboard():
+    with open(Path(__file__).parent / "static" / "multi-market.html") as f:
         return f.read()
 
 

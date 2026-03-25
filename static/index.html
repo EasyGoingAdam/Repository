@@ -239,6 +239,76 @@
     .status-active  { background: rgba(63,185,80,.2); color: var(--green); }
     .status-standby { background: rgba(139,148,158,.12); color: var(--muted); }
 
+    /* ── CAROUSEL ── */
+    .cmd-carousel-wrap {
+      position: relative; overflow: hidden; flex: 1;
+    }
+    .cmd-carousel-track {
+      display: flex; transition: transform 0.45s cubic-bezier(0.4,0,0.2,1);
+    }
+    .cmd-slide {
+      min-width: 100%; padding: 20px 24px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .carousel-controls {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 20px 10px; border-top: 1px solid var(--border); background: #0d1117;
+    }
+    .carousel-dots { display: flex; gap: 6px; }
+    .carousel-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--border);
+      cursor: pointer; transition: background .25s;
+    }
+    .carousel-dot.active { background: var(--blue); }
+    .carousel-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      width: 26px; height: 26px; border-radius: 4px; cursor: pointer;
+      font-size: 12px; display: flex; align-items: center; justify-content: center;
+      transition: all .2s;
+    }
+    .carousel-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .carousel-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+    }
+    /* Slide 2 — weights */
+    .weight-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+    .weight-name { width: 160px; color: var(--muted); flex-shrink: 0; }
+    .weight-bar-track {
+      flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+    }
+    .weight-bar-fill { height: 100%; border-radius: 3px; transition: width .6s ease; }
+    .weight-pct { width: 40px; text-align: right; font-family: monospace; color: var(--text); }
+    .weight-delta { width: 46px; text-align: right; font-size: 11px; font-family: monospace; }
+    /* Slide 3 — position */
+    .pos-metric { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .pos-metric:last-child { border: none; }
+    .pos-metric-label { color: var(--muted); }
+    .pos-metric-value { font-weight: 700; font-family: monospace; }
+
+    /* ── WEIGHT MODAL ── */
+    #weightModal {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,.75); align-items: center; justify-content: center;
+    }
+    #weightModal.open { display: flex; }
+    .weight-modal-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 24px 28px; max-width: 560px; width: 90%; max-height: 80vh; overflow-y: auto;
+    }
+    .weight-modal-box h3 { font-size: 14px; font-weight: 700; margin-bottom: 16px; color: var(--text); }
+    .weight-modal-close {
+      float: right; background: none; border: none; color: var(--muted);
+      font-size: 18px; cursor: pointer; margin-top: -4px;
+    }
+    .weight-modal-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .weight-modal-table th { color: var(--muted); text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
+    .weight-modal-table td { padding: 7px 8px; border-bottom: 1px solid #1c2128; color: var(--text); }
+    .weight-modal-table tr:last-child td { border: none; }
+    .delta-up { color: var(--green); }
+    .delta-down { color: var(--red); }
+    .delta-none { color: var(--muted); }
+    .modal-note { font-size: 11px; color: var(--muted); margin-top: 14px; line-height: 1.6; }
+
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: var(--surface); }
@@ -263,7 +333,7 @@
     <div class="stat-card"><div class="label">Model Estimate</div><div class="value purple" id="statPred">—</div><div class="sub" id="statConf">confidence —</div></div>
     <div class="stat-card"><div class="label">Volume</div><div class="value" id="statVol">—</div><div class="sub">total traded</div></div>
     <div class="stat-card"><div class="label">Liquidity</div><div class="value" id="statLiq">—</div><div class="sub">in order book</div></div>
-    <div class="stat-card"><div class="label">OB Imbalance</div><div class="value" id="statImbal">—</div><div class="sub" id="statImbalLabel">—</div></div>
+    <div class="stat-card"><div class="label">Order Book Signal</div><div class="value" id="statImbal">—</div><div class="sub" id="statImbalLabel">—</div></div>
     <div class="stat-card"><div class="label">Resolves</div><div class="value" id="statExpiry" style="font-size:18px">—</div><div class="sub" id="statDaysLeft">—</div></div>
   </div>
 
@@ -284,53 +354,103 @@
         <div class="cmd-odds-label">model estimate</div>
       </div>
 
-      <!-- Details column -->
-      <div class="cmd-details">
-        <div class="cmd-metrics">
-          <div class="cmd-metric">
-            <div class="cmd-metric-label">Market Price</div>
-            <div class="cmd-metric-value blue" id="cmdMarketPrice">—</div>
+      <!-- Carousel details column -->
+      <div class="cmd-carousel-wrap">
+        <div class="cmd-carousel-track" id="carouselTrack">
+
+          <!-- Slide 1: Key metrics + reason -->
+          <div class="cmd-slide">
+            <div class="cmd-metrics">
+              <div class="cmd-metric">
+                <div class="cmd-metric-label">Market Price</div>
+                <div class="cmd-metric-value blue" id="cmdMarketPrice">—</div>
+              </div>
+              <div class="cmd-metric">
+                <div class="cmd-metric-label">Our Edge</div>
+                <div class="cmd-metric-value" id="cmdEdge">—</div>
+              </div>
+              <div class="cmd-metric">
+                <div class="cmd-metric-label">Confidence</div>
+                <div class="cmd-metric-value" id="cmdConf">—</div>
+              </div>
+              <div class="cmd-metric">
+                <div class="cmd-metric-label">OB Bias</div>
+                <div class="cmd-metric-value" id="cmdOBBias">—</div>
+              </div>
+              <div class="cmd-metric">
+                <div class="cmd-metric-label">Signals (24h)</div>
+                <div class="cmd-metric-value" id="cmdSigCount">—</div>
+              </div>
+              <div class="cmd-metric">
+                <div class="cmd-metric-label">Convergence</div>
+                <div class="cmd-metric-value" id="cmdConv">—</div>
+              </div>
+            </div>
+            <div class="cmd-reason" id="cmdReason">Aggregating intelligence from all desks...</div>
           </div>
-          <div class="cmd-metric">
-            <div class="cmd-metric-label">Our Edge</div>
-            <div class="cmd-metric-value" id="cmdEdge">—</div>
+
+          <!-- Slide 2: Live algorithm weights -->
+          <div class="cmd-slide">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Live Algorithm Weights</div>
+            <div id="weightBars" style="display:flex;flex-direction:column;gap:8px">
+              <!-- filled by JS -->
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Weights are auto-refined as prediction history grows. Click <strong style="color:var(--text)">Update Algorithm</strong> below to recalculate now.</div>
           </div>
-          <div class="cmd-metric">
-            <div class="cmd-metric-label">Confidence</div>
-            <div class="cmd-metric-value" id="cmdConf">—</div>
+
+          <!-- Slide 3: Your position -->
+          <div class="cmd-slide">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Your Position — <span style="color:var(--purple)">@easygoinga</span></div>
+            <div id="positionRows">
+              <div style="color:var(--muted);font-size:12px;padding:12px 0">Connect your Polymarket wallet to see live position data.</div>
+            </div>
+            <div style="font-size:11px;color:var(--muted)" id="posLastUpdate"></div>
           </div>
-          <div class="cmd-metric">
-            <div class="cmd-metric-label">OB Bias</div>
-            <div class="cmd-metric-value" id="cmdOBBias">—</div>
-          </div>
-          <div class="cmd-metric">
-            <div class="cmd-metric-label">Signals (24h)</div>
-            <div class="cmd-metric-value" id="cmdSigCount">—</div>
-          </div>
-          <div class="cmd-metric">
-            <div class="cmd-metric-label">Convergence</div>
-            <div class="cmd-metric-value" id="cmdConv">—</div>
-          </div>
-        </div>
-        <div class="cmd-reason" id="cmdReason">Aggregating intelligence from all desks...</div>
-      </div>
+
+        </div><!-- /track -->
+      </div><!-- /carousel-wrap -->
     </div>
 
-    <!-- Desk links -->
-    <div class="cmd-desk-links">
-      <span style="font-size:11px;color:var(--muted);align-self:center;margin-right:4px">Intel Desks →</span>
-      <a href="/pulse"      class="cmd-desk-link cdl-pulse">  🕵️ Pulse   <span class="cdl-count" id="cdl-pulse">—</span></a>
-      <a href="/beacon"     class="cmd-desk-link cdl-beacon"> 📡 Beacon  <span class="cdl-count" id="cdl-beacon">—</span></a>
-      <a href="/market-desk"class="cmd-desk-link cdl-market"> 📊 Market  <span class="cdl-count" id="cdl-market">—</span></a>
-      <a href="/orderflow"  class="cmd-desk-link cdl-of">     📈 OrderFlow <span class="cdl-count" id="cdl-of">—</span></a>
+    <!-- Carousel controls + desk links -->
+    <div class="carousel-controls">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="carousel-btn" onclick="carouselPrev()">‹</button>
+        <div class="carousel-dots" id="carouselDots">
+          <div class="carousel-dot active" onclick="goSlide(0)"></div>
+          <div class="carousel-dot" onclick="goSlide(1)"></div>
+          <div class="carousel-dot" onclick="goSlide(2)"></div>
+        </div>
+        <button class="carousel-btn" onclick="carouselNext()">›</button>
+        <span class="carousel-label" id="carouselLabel">Signal Overview</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--muted)">Desks →</span>
+        <a href="/pulse"      class="cmd-desk-link cdl-pulse">  🕵️ Pulse <span class="cdl-count" id="cdl-pulse">—</span></a>
+        <a href="/beacon"     class="cmd-desk-link cdl-beacon"> 📡 Beacon <span class="cdl-count" id="cdl-beacon">—</span></a>
+        <a href="/market-desk"class="cmd-desk-link cdl-market"> 📊 Market <span class="cdl-count" id="cdl-market">—</span></a>
+        <a href="/orderflow"  class="cmd-desk-link cdl-of">     📈 OrderFlow <span class="cdl-count" id="cdl-of">—</span></a>
+      </div>
     </div>
   </div>
 
   <!-- Action buttons -->
   <div class="btn-row">
     <button class="btn" id="btnPredict" onclick="storePrediction()">📌 Store Prediction</button>
-    <button class="btn btn-ghost" onclick="resolveAll()">✓ Check Resolutions</button>
-    <button class="btn btn-ghost" onclick="refineWeights()">⚙ Refine Algorithm</button>
+    <button class="btn btn-ghost" id="btnRefine" onclick="refineWeights()">⚙ Update Algorithm</button>
+  </div>
+
+  <!-- Weight refinement modal -->
+  <div id="weightModal">
+    <div class="weight-modal-box">
+      <button class="weight-modal-close" onclick="closeWeightModal()">✕</button>
+      <h3>⚙ Algorithm Weights — Updated</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px" id="weightModalNote">Loading...</p>
+      <table class="weight-modal-table" id="weightModalTable">
+        <thead><tr><th>Signal</th><th>Previous</th><th>Updated</th><th>Change</th><th>Role</th></tr></thead>
+        <tbody id="weightModalBody"></tbody>
+      </table>
+      <div class="modal-note" id="weightModalFooter"></div>
+    </div>
   </div>
 
   <div class="main-grid">
@@ -910,7 +1030,7 @@ async function loadOrderBook() {
     const imbalEl = document.getElementById('statImbal');
     imbalEl.textContent = (imbal > 0 ? '+' : '') + imbal.toFixed(3);
     imbalEl.className = 'value ' + (imbal > 0.05 ? 'green' : imbal < -0.05 ? 'red' : 'yellow');
-    document.getElementById('statImbalLabel').textContent = imbal > 0.1 ? 'buy pressure' : imbal < -0.1 ? 'sell pressure' : 'balanced';
+    document.getElementById('statImbalLabel').textContent = imbal > 0.1 ? '↑ leaning WILL HAPPEN' : imbal < -0.1 ? "↓ leaning WON'T HAPPEN" : '↔ unclear';
 
     // Merge bids and asks into one sorted table
     const maxSize = Math.max(
@@ -1089,12 +1209,83 @@ async function resolveAll() {
 }
 
 async function refineWeights() {
+  const btn = document.getElementById('btnRefine');
+  btn.disabled = true; btn.textContent = '⏳ Calculating...';
   try {
     const d = await api('/api/refine', 'POST');
-    const deltas = Object.entries(d.delta).map(([k,v]) => `${k}: ${v > 0 ? '+' : ''}${v.toFixed(4)}`).join('\n');
-    alert('Weights refined!\n\n' + deltas);
-  } catch(e) { alert('Error (need ≥3 resolved predictions): ' + e.message); }
+    showWeightModal(d);
+    // Reload slide 2
+    await loadWeightSlide();
+  } catch(e) {
+    // Even if refinement needs more data, show current weights
+    try {
+      const w = await fetch('/api/weights').then(r => r.json());
+      showWeightModal({ previous: w.weights, updated: w.weights, delta: {}, predictions_used: 0, note: e.message });
+    } catch(_) { alert('Error: ' + e.message); }
+  } finally {
+    btn.disabled = false; btn.textContent = '⚙ Update Algorithm';
+  }
 }
+
+function showWeightModal(d) {
+  const SIGNAL_LABELS = {
+    market_price:      { label: 'Market Price',       desc: 'Trust the efficient-market baseline', color: '#58a6ff' },
+    momentum:          { label: 'Price Momentum',     desc: 'Recent trend direction (1-week)',     color: '#bc8cff' },
+    volume_conviction: { label: 'Volume Conviction',  desc: 'High volume = more market trust',     color: '#3fb950' },
+    liquidity_quality: { label: 'Liquidity Quality',  desc: 'Deep book = harder to manipulate',    color: '#3fb950' },
+    time_decay:        { label: 'Time Decay',         desc: 'Near expiry = price more reliable',   color: '#d29922' },
+    orderbook_imbalance:{ label: 'OB Imbalance',      desc: 'Proximity-weighted bid vs ask skew',  color: '#f97316' },
+    trade_flow:        { label: 'Trade Flow',         desc: 'Net direction of last 50 trades',     color: '#ef4444' },
+  };
+
+  const prev = d.previous || {};
+  const upd  = d.updated  || {};
+  const delta = d.delta   || {};
+  const predsUsed = d.predictions_used ?? d.note ?? '—';
+
+  const noteEl = document.getElementById('weightModalNote');
+  noteEl.textContent = typeof predsUsed === 'number'
+    ? `Recalculated using ${predsUsed} resolved prediction${predsUsed !== 1 ? 's' : ''}.`
+    : `${predsUsed}`;
+
+  const tbody = document.getElementById('weightModalBody');
+  // Sort by updated weight descending
+  const keys = Object.keys(upd).sort((a,b) => (upd[b]||0) - (upd[a]||0));
+  tbody.innerHTML = keys.map(k => {
+    const info = SIGNAL_LABELS[k] || { label: k, desc: '', color: '#8b949e' };
+    const dv = delta[k] ?? 0;
+    const prevPct = ((prev[k] || 0) * 100).toFixed(1);
+    const updPct  = ((upd[k]  || 0) * 100).toFixed(1);
+    const deltaClass = dv > 0.0005 ? 'delta-up' : dv < -0.0005 ? 'delta-down' : 'delta-none';
+    const deltaStr = dv === 0 || Math.abs(dv) < 0.00001 ? '—'
+      : (dv > 0 ? '+' : '') + (dv * 100).toFixed(2) + 'pp';
+    const barW = Math.round((upd[k] || 0) * 200); // max 100px at weight=0.5
+    return `<tr>
+      <td>
+        <strong>${info.label}</strong>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${info.desc}</div>
+        <div style="height:4px;border-radius:2px;background:${info.color};width:${barW}px;margin-top:4px;max-width:100%;transition:width .5s"></div>
+      </td>
+      <td style="color:var(--muted)">${prevPct}%</td>
+      <td><strong>${updPct}%</strong></td>
+      <td class="${deltaClass}">${deltaStr}</td>
+    </tr>`;
+  }).join('');
+
+  const footer = document.getElementById('weightModalFooter');
+  footer.innerHTML = `<strong>How weights update:</strong> After each prediction resolves, a gradient-descent step nudges weights in the direction that would have reduced the Brier score error. With &lt;3 resolved predictions the weights stay at defaults. More resolved predictions = more accurate calibration over time.`;
+
+  document.getElementById('weightModal').classList.add('open');
+}
+
+function closeWeightModal() {
+  document.getElementById('weightModal').classList.remove('open');
+}
+
+// Close modal on backdrop click
+document.addEventListener('click', e => {
+  if (e.target.id === 'weightModal') closeWeightModal();
+});
 
 async function loadCommandIntel() {
   try {
@@ -1152,7 +1343,8 @@ async function loadCommandIntel() {
 
     const biasRaw = state?.orderbook_bias ?? 'neutral';
     const biasEl = document.getElementById('cmdOBBias');
-    biasEl.textContent = biasRaw.toUpperCase();
+    const biasLabel = biasRaw === 'bullish' ? 'WILL HAPPEN' : biasRaw === 'bearish' ? "WON'T HAPPEN" : 'UNCLEAR';
+    biasEl.textContent = biasLabel;
     biasEl.style.color = biasRaw === 'bullish' ? 'var(--green)' : biasRaw === 'bearish' ? 'var(--red)' : 'var(--muted)';
 
     const convEl = document.getElementById('cmdConv');
@@ -1186,6 +1378,107 @@ async function loadCommandIntel() {
   } catch(e) { console.error('command intel', e); }
 }
 
+// ── Carousel ──────────────────────────────────────────────────────────────────
+const SLIDE_LABELS = ['Signal Overview', 'Algorithm Weights', 'Your Position'];
+let currentSlide = 0;
+let carouselTimer = null;
+
+function goSlide(n) {
+  const total = 3;
+  currentSlide = ((n % total) + total) % total;
+  document.getElementById('carouselTrack').style.transform = `translateX(-${currentSlide * 100}%)`;
+  document.getElementById('carouselLabel').textContent = SLIDE_LABELS[currentSlide];
+  document.querySelectorAll('.carousel-dot').forEach((d,i) =>
+    d.classList.toggle('active', i === currentSlide));
+  resetCarouselTimer();
+}
+function carouselNext() { goSlide(currentSlide + 1); }
+function carouselPrev() { goSlide(currentSlide - 1); }
+function resetCarouselTimer() {
+  clearInterval(carouselTimer);
+  carouselTimer = setInterval(carouselNext, 7000);
+}
+resetCarouselTimer();
+
+// ── Weight slide ──────────────────────────────────────────────────────────────
+const WEIGHT_META = {
+  market_price:       { label: 'Market Price Anchor', color: '#58a6ff' },
+  momentum:           { label: 'Price Momentum',      color: '#bc8cff' },
+  volume_conviction:  { label: 'Volume Conviction',   color: '#3fb950' },
+  liquidity_quality:  { label: 'Liquidity Quality',   color: '#3fb950' },
+  time_decay:         { label: 'Time Decay',          color: '#d29922' },
+  orderbook_imbalance:{ label: 'OB Imbalance',        color: '#f97316' },
+  trade_flow:         { label: 'Trade Flow',          color: '#ef4444' },
+};
+
+async function loadWeightSlide() {
+  try {
+    const d = await fetch('/api/weights').then(r => r.json());
+    const weights = d.weights || {};
+    const container = document.getElementById('weightBars');
+    const sorted = Object.entries(weights).sort((a,b) => b[1] - a[1]);
+    const maxW = sorted[0]?.[1] || 1;
+    container.innerHTML = sorted.map(([k, v]) => {
+      const meta = WEIGHT_META[k] || { label: k, color: '#8b949e' };
+      const pct = (v * 100).toFixed(1);
+      const barPct = Math.round(v / maxW * 100);
+      return `<div class="weight-row">
+        <div class="weight-name">${meta.label}</div>
+        <div class="weight-bar-track">
+          <div class="weight-bar-fill" style="width:${barPct}%;background:${meta.color}"></div>
+        </div>
+        <div class="weight-pct">${pct}%</div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+// ── Position slide ────────────────────────────────────────────────────────────
+async function loadPositionSlide() {
+  try {
+    const d = await fetch('/api/user/position').then(r => r.json());
+    const rows = document.getElementById('positionRows');
+    const lu = document.getElementById('posLastUpdate');
+    if (d.error) {
+      rows.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">${d.error}</div>`;
+      return;
+    }
+    if (!d.found) {
+      rows.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">No open position found on this market.</div>`;
+      return;
+    }
+    const p = d.position;
+    const yesShares = p.yes_shares ?? 0;
+    const noShares  = p.no_shares  ?? 0;
+    const avgYes    = p.avg_price_yes ?? null;
+    const avgNo     = p.avg_price_no  ?? null;
+    const curPrice  = p.current_yes_price ?? null;
+    const pnl       = p.unrealized_pnl ?? null;
+    const cost      = p.total_cost ?? null;
+
+    const items = [
+      ['YES Shares Held',  yesShares  > 0 ? yesShares.toFixed(2)  : '—', yesShares > 0 ? 'var(--green)' : null],
+      ['NO Shares Held',   noShares   > 0 ? noShares.toFixed(2)   : '—', noShares  > 0 ? 'var(--red)'   : null],
+      ['Avg Buy Price (YES)', avgYes ? (avgYes * 100).toFixed(2) + '¢' : '—', null],
+      ['Current Price',    curPrice ? (curPrice * 100).toFixed(2) + '¢' : '—', 'var(--blue)'],
+      ['Unrealized P&L',   pnl != null ? (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2) : '—',
+                           pnl != null ? (pnl >= 0 ? 'var(--green)' : 'var(--red)') : null],
+      ['Total Cost Basis', cost != null ? '$' + cost.toFixed(2) : '—', null],
+    ];
+
+    rows.innerHTML = items.map(([label, val, color]) =>
+      `<div class="pos-metric">
+        <span class="pos-metric-label">${label}</span>
+        <span class="pos-metric-value" style="${color ? 'color:'+color : ''}">${val}</span>
+      </div>`
+    ).join('');
+    if (d.fetched_at) lu.textContent = 'Updated ' + new Date(d.fetched_at).toLocaleTimeString();
+  } catch(e) {
+    document.getElementById('positionRows').innerHTML =
+      `<div style="color:var(--muted);font-size:12px;padding:8px 0">Position data unavailable.</div>`;
+  }
+}
+
 function toggleAlgo() {
   const body = document.getElementById('algoBody');
   const icon = document.getElementById('algoToggleIcon');
@@ -1204,6 +1497,8 @@ async function refreshAll() {
     loadPerformance(),
     loadOBHistory(),
     loadCommandIntel(),
+    loadWeightSlide(),
+    loadPositionSlide(),
   ]);
   document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
