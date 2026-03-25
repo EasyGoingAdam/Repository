@@ -5,3 +5,4 @@ __pycache__/
 data/predictions.json
 data/weights.json
 data/watchlist.json
+data/signals.db

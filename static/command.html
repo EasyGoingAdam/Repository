@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>First Strike Command</title>
+  <style>
+    :root {
+      --bg: #060a0f;
+      --surface: #0d1520;
+      --border: #1a2535;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --blue: #3b82f6;
+      --purple: #a855f7;
+      --orange: #f97316;
+      --urgent: #ff2d2d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; overflow-x: hidden; }
+
+    /* ── HEADER ── */
+    header {
+      background: linear-gradient(90deg, #0a0f1a 0%, #0d1520 50%, #0a0f1a 100%);
+      border-bottom: 1px solid #1a2535;
+      padding: 12px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo { font-size: 20px; font-weight: 900; letter-spacing: .12em; color: #fff; }
+    .logo span { color: #ef4444; }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .alert-badge {
+      padding: 4px 14px; border-radius: 4px; font-size: 12px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+    .alert-NO_ACTION { background: #1a2535; color: var(--muted); }
+    .alert-DIGEST { background: #1a3a1a; color: var(--green); border: 1px solid var(--green); }
+    .alert-IMPORTANT { background: #3a2a00; color: var(--yellow); border: 1px solid var(--yellow); }
+    .alert-URGENT { background: #3a0000; color: var(--urgent); border: 1px solid var(--urgent); animation: urgentPulse 1s infinite; }
+    @keyframes urgentPulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .mode-toggle { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: inherit; }
+    .mode-toggle:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* ── ODDS BAR ── */
+    .odds-bar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 10px 24px; display: flex; align-items: center; gap: 32px;
+    }
+    .odds-item { text-align: center; }
+    .odds-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .odds-value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+    .odds-delta { font-size: 12px; margin-top: 2px; }
+    .rec-badge {
+      padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em; margin-left: auto;
+    }
+    .rec-no_action { background: #1a2535; color: var(--muted); }
+    .rec-monitor { background: #0f2a3a; color: var(--blue); border: 1px solid var(--blue); }
+    .rec-edge { background: #2a1a00; color: var(--orange); border: 1px solid var(--orange); }
+    .rec-urgent { background: #3a0000; color: var(--urgent); border: 1px solid var(--urgent); }
+    .reason-text { font-size: 11px; color: var(--muted); margin-left: 8px; max-width: 400px; }
+
+    /* ── MAIN AREA ── */
+    .main { position: relative; min-height: calc(100vh - 140px); }
+
+    /* ── OFFICE FLOOR ── */
+    #officeFloor {
+      width: 100%; min-height: 520px;
+      background: radial-gradient(ellipse at 50% 30%, #0d1a0d 0%, #060a0f 70%);
+      position: relative; overflow: hidden;
+      border-bottom: 2px solid var(--border);
+      transition: all 0.8s ease;
+    }
+    /* Floor grid lines */
+    #officeFloor::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(26,37,53,.4) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(26,37,53,.4) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* ── DESK LAYOUT (normal mode) ── */
+    .worker-station {
+      position: absolute;
+      display: flex; flex-direction: column; align-items: center;
+      transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 10;
+    }
+
+    /* Positions for 5 stations */
+    #station-pulse    { left: 8%;  top: 55px; }
+    #station-beacon   { left: 26%; top: 55px; }
+    #station-market   { left: 44%; top: 55px; }
+    #station-orderflow{ left: 62%; top: 55px; }
+    #station-command  { left: 80%; top: 55px; }
+
+    /* WAR ROOM mode — all to conference table */
+    .war-room #station-pulse     { left: 12%;  top: 200px; }
+    .war-room #station-beacon    { left: 27%;  top: 200px; }
+    .war-room #station-market    { left: 42%;  top: 200px; }
+    .war-room #station-orderflow { left: 57%;  top: 200px; }
+    .war-room #station-command   { left: 72%;  top: 200px; }
+
+    /* Conference table */
+    #confTable {
+      position: absolute; left: 50%; top: 120px;
+      transform: translateX(-50%);
+      width: 600px; height: 80px;
+      background: linear-gradient(180deg, #1a2510 0%, #0d1a0a 100%);
+      border: 2px solid #2a3a20; border-radius: 40px;
+      opacity: 0; transition: opacity 0.8s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .war-room #confTable { opacity: 1; }
+    .conf-label { font-size: 11px; color: #4a6a3a; letter-spacing: .1em; }
+
+    /* ── DESK ── */
+    .desk {
+      width: 120px; height: 70px;
+      background: linear-gradient(180deg, #1a2535 0%, #0d1a2a 100%);
+      border: 1px solid var(--border); border-radius: 4px;
+      position: relative; margin-top: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.5);
+    }
+    .desk::before {
+      content: ''; position: absolute; top: 8px; left: 10px; right: 10px; height: 32px;
+      background: linear-gradient(180deg, #0a1520 0%, #060d18 100%);
+      border: 1px solid #1a2535; border-radius: 2px;
+    }
+    /* Monitor glow */
+    .desk::after {
+      content: ''; position: absolute; top: 9px; left: 11px; right: 11px; height: 30px;
+      background: radial-gradient(ellipse at 50% 50%, rgba(59,130,246,.05) 0%, transparent 70%);
+      border-radius: 2px; transition: background 0.3s;
+    }
+    .desk.active::after {
+      background: radial-gradient(ellipse at 50% 50%, rgba(59,130,246,.2) 0%, transparent 70%);
+    }
+
+    /* ── WORKER CHARACTER ── */
+    .worker { font-size: 36px; line-height: 1; cursor: default; user-select: none; transition: transform 0.3s; }
+    .worker.alert { animation: workerAlert 0.5s ease 3; }
+    @keyframes workerAlert {
+      0%,100%{transform:scale(1)} 50%{transform:scale(1.3)}
+    }
+
+    /* App name label */
+    .app-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .1em; margin-top: 6px; color: var(--muted);
+    }
+    .app-label.pulse-color { color: #a855f7; }
+    .app-label.beacon-color { color: #3b82f6; }
+    .app-label.market-color { color: #22c55e; }
+    .app-label.orderflow-color { color: #f97316; }
+    .app-label.command-color { color: #ef4444; }
+
+    /* Status dot */
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted); position: absolute; top: -2px; right: -2px;
+      transition: background 0.3s;
+    }
+    .status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.active { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); animation: dotPulse 0.8s infinite; }
+    @keyframes dotPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── SPEECH BUBBLE ── */
+    .speech-bubble {
+      position: absolute; top: -90px; left: 50%; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px; min-width: 160px; max-width: 200px;
+      font-size: 10px; line-height: 1.4; color: var(--text);
+      opacity: 0; transition: opacity 0.4s;
+      pointer-events: none; z-index: 100;
+      box-shadow: 0 4px 16px rgba(0,0,0,.6);
+    }
+    .speech-bubble::after {
+      content: ''; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: var(--border);
+      border-bottom: none;
+    }
+    .speech-bubble.visible { opacity: 1; }
+    .speech-bubble .bubble-dir {
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      margin-bottom: 4px; letter-spacing: .08em;
+    }
+    .speech-bubble .bubble-dir.bullish { color: var(--green); }
+    .speech-bubble .bubble-dir.bearish { color: var(--red); }
+    .speech-bubble .bubble-dir.neutral { color: var(--muted); }
+    .speech-bubble .bubble-text { color: var(--muted); }
+    .speech-bubble .bubble-conf { font-size: 9px; color: var(--muted); margin-top: 4px; }
+
+    /* ── SIGNAL FEED (bottom) ── */
+    #signalFeed {
+      background: var(--surface); border-top: 1px solid var(--border);
+      padding: 0; max-height: 300px; overflow-y: auto;
+    }
+    .feed-header {
+      position: sticky; top: 0; background: #0a1020;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 20px; display: flex; justify-content: space-between;
+      align-items: center; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); z-index: 5;
+    }
+    .feed-tabs { display: flex; gap: 16px; }
+    .feed-tab { cursor: pointer; padding: 2px 0; border-bottom: 2px solid transparent; }
+    .feed-tab.active { color: var(--text); border-bottom-color: var(--blue); }
+    .signal-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 8px 20px; border-bottom: 1px solid #0d1520;
+      font-size: 11px; transition: background 0.2s;
+    }
+    .signal-row:hover { background: #0d1520; }
+    .signal-row.new { animation: signalFlash 1s ease; }
+    @keyframes signalFlash { 0%{background:#0f2a10} 100%{background:transparent} }
+    .signal-source {
+      width: 80px; flex-shrink: 0; font-weight: 700;
+      font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    }
+    .signal-source.pulse { color: #a855f7; }
+    .signal-source.beacon { color: #3b82f6; }
+    .signal-source.market { color: #22c55e; }
+    .signal-source.orderflow { color: #f97316; }
+    .signal-direction-pill {
+      flex-shrink: 0; padding: 1px 7px; border-radius: 10px;
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+    }
+    .pill-bullish { background: rgba(34,197,94,.15); color: var(--green); }
+    .pill-bearish { background: rgba(239,68,68,.15); color: var(--red); }
+    .pill-neutral { background: rgba(100,116,139,.15); color: var(--muted); }
+    .signal-headline { flex: 1; color: var(--text); line-height: 1.4; }
+    .signal-meta { flex-shrink: 0; text-align: right; color: var(--muted); font-size: 10px; }
+    .signal-scores { font-size: 9px; }
+    .score-c { color: var(--blue); }
+    .score-i { color: var(--orange); }
+
+    /* ── WAR ROOM OVERLAY ── */
+    #warRoomBanner {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(60,0,0,.95); border: 2px solid var(--urgent);
+      border-radius: 8px; padding: 16px 32px; text-align: center;
+      z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.5s;
+    }
+    #warRoomBanner.visible { opacity: 1; }
+    #warRoomBanner .banner-title {
+      font-size: 24px; font-weight: 900; color: var(--urgent);
+      letter-spacing: .15em; animation: urgentPulse 1s infinite;
+    }
+    #warRoomBanner .banner-sub { font-size: 12px; color: #ff8888; margin-top: 4px; }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Links */
+    .dashboard-link {
+      font-size: 11px; color: var(--muted); text-decoration: none;
+      border: 1px solid var(--border); padding: 3px 10px; border-radius: 4px;
+    }
+    .dashboard-link:hover { color: var(--blue); border-color: var(--blue); }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo"><span>FIRST</span> STRIKE COMMAND</div>
+  <div class="header-right">
+    <span class="alert-badge alert-NO_ACTION" id="alertBadge">LOADING</span>
+    <button class="mode-toggle" id="modeBtn" onclick="toggleWarRoom()">⚡ WAR ROOM</button>
+    <a class="dashboard-link" href="/">← Market Dashboard</a>
+  </div>
+</header>
+
+<!-- Odds Bar -->
+<div class="odds-bar">
+  <div class="odds-item">
+    <div class="odds-label">Market Odds</div>
+    <div class="odds-value blue" id="marketOdds">—</div>
+  </div>
+  <div class="odds-item">
+    <div class="odds-label">House Odds</div>
+    <div class="odds-value purple" id="houseOdds">—</div>
+  </div>
+  <div class="odds-item">
+    <div class="odds-label">Delta</div>
+    <div class="odds-value" id="oddsDelta">—</div>
+    <div class="odds-delta" id="oddsArrow"></div>
+  </div>
+  <div class="odds-item">
+    <div class="odds-label">OB Bias</div>
+    <div class="odds-value" id="obBias">—</div>
+  </div>
+  <div class="odds-item">
+    <div class="odds-label">Convergence</div>
+    <div class="odds-value" id="convergence">—</div>
+  </div>
+  <span class="rec-badge rec-monitor" id="recBadge">MONITOR</span>
+  <span class="reason-text" id="reasonText"></span>
+</div>
+
+<!-- Main: Office Floor -->
+<div class="main">
+  <div id="officeFloor">
+
+    <!-- Conference table (war room mode) -->
+    <div id="confTable"><span class="conf-label">⬛ SITUATION ROOM ⬛</span></div>
+
+    <!-- War room banner -->
+    <div id="warRoomBanner">
+      <div class="banner-title">⚠ WAR ROOM ACTIVATED ⚠</div>
+      <div class="banner-sub" id="warRoomReason">High-importance signals detected</div>
+    </div>
+
+    <!-- Worker stations -->
+    <div class="worker-station" id="station-pulse">
+      <div style="position:relative">
+        <div class="worker" id="worker-pulse">🕵️</div>
+        <div class="status-dot" id="dot-pulse"></div>
+      </div>
+      <div class="desk" id="desk-pulse"></div>
+      <div class="app-label pulse-color">Pulse</div>
+      <div class="speech-bubble" id="bubble-pulse">
+        <div class="bubble-dir neutral">Standby</div>
+        <div class="bubble-text">Monitoring X/Twitter...</div>
+      </div>
+    </div>
+
+    <div class="worker-station" id="station-beacon">
+      <div style="position:relative">
+        <div class="worker" id="worker-beacon">📡</div>
+        <div class="status-dot" id="dot-beacon"></div>
+      </div>
+      <div class="desk" id="desk-beacon"></div>
+      <div class="app-label beacon-color">Beacon</div>
+      <div class="speech-bubble" id="bubble-beacon">
+        <div class="bubble-dir neutral">Standby</div>
+        <div class="bubble-text">Scanning news feeds...</div>
+      </div>
+    </div>
+
+    <div class="worker-station" id="station-market">
+      <div style="position:relative">
+        <div class="worker" id="worker-market">📊</div>
+        <div class="status-dot" id="dot-market"></div>
+      </div>
+      <div class="desk" id="desk-market"></div>
+      <div class="app-label market-color">Market</div>
+      <div class="speech-bubble" id="bubble-market">
+        <div class="bubble-dir neutral">Standby</div>
+        <div class="bubble-text">Watching Polymarket...</div>
+      </div>
+    </div>
+
+    <div class="worker-station" id="station-orderflow">
+      <div style="position:relative">
+        <div class="worker" id="worker-orderflow">📈</div>
+        <div class="status-dot" id="dot-orderflow"></div>
+      </div>
+      <div class="desk" id="desk-orderflow"></div>
+      <div class="app-label orderflow-color">OrderFlow</div>
+      <div class="speech-bubble" id="bubble-orderflow">
+        <div class="bubble-dir neutral">Standby</div>
+        <div class="bubble-text">Reading order book...</div>
+      </div>
+    </div>
+
+    <div class="worker-station" id="station-command">
+      <div style="position:relative">
+        <div class="worker" id="worker-command">🎖️</div>
+        <div class="status-dot online" id="dot-command"></div>
+      </div>
+      <div class="desk" id="desk-command"></div>
+      <div class="app-label command-color">Command</div>
+      <div class="speech-bubble" id="bubble-command">
+        <div class="bubble-dir neutral">Online</div>
+        <div class="bubble-text" id="cmd-bubble-text">Aggregating signals...</div>
+      </div>
+    </div>
+
+  </div><!-- /officeFloor -->
+
+  <!-- Signal Feed -->
+  <div id="signalFeed">
+    <div class="feed-header">
+      <div class="feed-tabs">
+        <span class="feed-tab active" onclick="filterFeed('all', this)">All</span>
+        <span class="feed-tab" onclick="filterFeed('pulse', this)">Pulse</span>
+        <span class="feed-tab" onclick="filterFeed('beacon', this)">Beacon</span>
+        <span class="feed-tab" onclick="filterFeed('market', this)">Market</span>
+        <span class="feed-tab" onclick="filterFeed('orderflow', this)">OrderFlow</span>
+      </div>
+      <span id="signalCount" style="color:var(--muted);font-size:10px">0 signals</span>
+    </div>
+    <div id="feedRows"></div>
+  </div>
+</div>
+
+<script>
+let warRoomActive = false;
+let currentFilter = 'all';
+let lastSignalIds = new Set();
+let allSignals = [];
+
+// ── Fetch and render ──────────────────────────────────────────────────────────
+
+async function api(path, method='GET') {
+  const r = await fetch(path, { method });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function loadCommandState() {
+  try {
+    const d = await api('/api/command/state');
+
+    // Alert badge
+    const alertEl = document.getElementById('alertBadge');
+    alertEl.textContent = d.alert_level || 'NO_ACTION';
+    alertEl.className = 'alert-badge alert-' + (d.alert_level || 'NO_ACTION');
+
+    // Odds
+    document.getElementById('marketOdds').textContent = d.market_odds ? d.market_odds.toFixed(1) + '%' : '—';
+    document.getElementById('houseOdds').textContent = d.house_odds ? d.house_odds.toFixed(1) + '%' : '—';
+
+    const delta = d.odds_delta || 0;
+    const deltaEl = document.getElementById('oddsDelta');
+    deltaEl.textContent = (delta >= 0 ? '+' : '') + delta.toFixed(1) + 'pp';
+    deltaEl.style.color = delta > 0.5 ? 'var(--green)' : delta < -0.5 ? 'var(--red)' : 'var(--muted)';
+
+    // OB bias
+    const obEl = document.getElementById('obBias');
+    const bias = d.orderbook_bias || 'neutral';
+    obEl.textContent = bias.toUpperCase();
+    obEl.style.color = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : 'var(--muted)';
+
+    // Convergence
+    const convEl = document.getElementById('convergence');
+    convEl.textContent = d.convergence ? '✓ YES' : '✗ NO';
+    convEl.style.color = d.convergence ? 'var(--green)' : 'var(--muted)';
+
+    // Recommendation
+    const recEl = document.getElementById('recBadge');
+    recEl.textContent = (d.recommended_action || 'MONITOR').toUpperCase().replace('_', ' ');
+    recEl.className = 'rec-badge rec-' + (d.recommended_action || 'monitor');
+
+    document.getElementById('reasonText').textContent = d.reason_summary || '';
+
+    // Command bubble
+    document.getElementById('cmd-bubble-text').textContent =
+      d.reason_summary ? d.reason_summary.slice(0, 80) : 'Aggregating...';
+
+    // Auto-war-room on URGENT
+    if (d.alert_level === 'URGENT' && !warRoomActive) {
+      activateWarRoom(d.reason_summary);
+    } else if (d.alert_level !== 'URGENT' && warRoomActive) {
+      deactivateWarRoom();
+    }
+
+    // Update top signals into worker bubbles
+    if (d.top_signals && d.top_signals.length) {
+      const byApp = {};
+      for (const s of d.top_signals) {
+        if (!byApp[s.source_app]) byApp[s.source_app] = s;
+      }
+      for (const [app, sig] of Object.entries(byApp)) {
+        updateBubble(app, sig);
+      }
+    }
+
+  } catch(e) { console.error('command state', e); }
+}
+
+async function loadSignals() {
+  try {
+    const d = await api('/api/command/signals');
+    allSignals = d.signals || [];
+
+    // Detect new signals
+    const newIds = new Set(allSignals.map(s => s.id));
+    const freshIds = [...newIds].filter(id => !lastSignalIds.has(id));
+
+    renderFeed(allSignals, freshIds);
+
+    // Update worker dots
+    const appCounts = {};
+    for (const s of allSignals.slice(0, 50)) {
+      appCounts[s.source_app] = (appCounts[s.source_app] || 0) + 1;
+    }
+    for (const app of ['pulse', 'beacon', 'market', 'orderflow']) {
+      const dot = document.getElementById('dot-' + app);
+      if (dot) {
+        if (freshIds.some(id => {
+          const s = allSignals.find(x => x.id === id);
+          return s && s.source_app === app;
+        })) {
+          dot.className = 'status-dot active';
+          triggerWorkerAlert(app);
+          setTimeout(() => { if (dot) dot.className = 'status-dot online'; }, 3000);
+        } else if (appCounts[app]) {
+          dot.className = 'status-dot online';
+        }
+      }
+    }
+
+    lastSignalIds = newIds;
+    document.getElementById('signalCount').textContent = allSignals.length + ' signals';
+  } catch(e) { console.error('signals', e); }
+}
+
+function renderFeed(signals, freshIds) {
+  const filtered = currentFilter === 'all' ? signals : signals.filter(s => s.source_app === currentFilter);
+  const rows = filtered.slice(0, 80).map(s => {
+    const isNew = freshIds.includes(s.id);
+    const ts = new Date(s.timestamp).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+    const impact = s.probability_impact_estimate;
+    const impactStr = impact ? (impact > 0 ? '+' : '') + impact.toFixed(1) + 'pp' : '';
+    return `<div class="signal-row ${isNew ? 'new' : ''}" id="sig-${s.id}">
+      <div class="signal-source ${s.source_app}">${s.source_app}</div>
+      <div class="signal-direction-pill pill-${s.signal_direction}">${s.signal_direction}</div>
+      <div class="signal-headline">${escHtml(s.headline || '').slice(0,120)}</div>
+      <div class="signal-meta">
+        <div>${ts}</div>
+        <div class="signal-scores">
+          <span class="score-c">C:${s.confidence_score}</span>
+          <span style="color:var(--border)"> / </span>
+          <span class="score-i">I:${s.importance_score}</span>
+          ${impactStr ? `<span style="color:${impact > 0 ? 'var(--green)' : 'var(--red)'}"> ${impactStr}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('feedRows').innerHTML = rows || '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center">No signals yet. Intelligence gathering in progress...</div>';
+}
+
+function filterFeed(filter, el) {
+  currentFilter = filter;
+  document.querySelectorAll('.feed-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderFeed(allSignals, []);
+}
+
+// ── Worker bubble updates ─────────────────────────────────────────────────────
+
+function updateBubble(app, sig) {
+  const bubble = document.getElementById('bubble-' + app);
+  if (!bubble) return;
+  const dirEl = bubble.querySelector('.bubble-dir');
+  const textEl = bubble.querySelector('.bubble-text');
+  const confEl = bubble.querySelector('.bubble-conf') || (() => {
+    const el = document.createElement('div');
+    el.className = 'bubble-conf';
+    bubble.appendChild(el);
+    return el;
+  })();
+
+  dirEl.textContent = sig.signal_direction.toUpperCase();
+  dirEl.className = 'bubble-dir ' + sig.signal_direction;
+  textEl.textContent = (sig.headline || '').slice(0, 70);
+  confEl.textContent = `C:${sig.confidence_score} I:${sig.importance_score}`;
+
+  bubble.classList.add('visible');
+  setTimeout(() => bubble.classList.remove('visible'), 8000);
+}
+
+function triggerWorkerAlert(app) {
+  const worker = document.getElementById('worker-' + app);
+  const desk = document.getElementById('desk-' + app);
+  if (worker) { worker.classList.add('alert'); setTimeout(() => worker.classList.remove('alert'), 1600); }
+  if (desk) { desk.classList.add('active'); setTimeout(() => desk.classList.remove('active'), 3000); }
+}
+
+// ── War Room ─────────────────────────────────────────────────────────────────
+
+function activateWarRoom(reason) {
+  warRoomActive = true;
+  document.getElementById('officeFloor').classList.add('war-room');
+  document.getElementById('warRoomBanner').classList.add('visible');
+  document.getElementById('warRoomReason').textContent = reason || 'High-importance event detected';
+  document.getElementById('modeBtn').textContent = '✕ Exit War Room';
+  setTimeout(() => document.getElementById('warRoomBanner').classList.remove('visible'), 4000);
+
+  // Show all bubbles briefly
+  ['pulse','beacon','market','orderflow','command'].forEach(app => {
+    const b = document.getElementById('bubble-' + app);
+    if (b) { b.classList.add('visible'); }
+  });
+}
+
+function deactivateWarRoom() {
+  warRoomActive = false;
+  document.getElementById('officeFloor').classList.remove('war-room');
+  document.getElementById('modeBtn').textContent = '⚡ WAR ROOM';
+  ['pulse','beacon','market','orderflow','command'].forEach(app => {
+    const b = document.getElementById('bubble-' + app);
+    if (b) b.classList.remove('visible');
+  });
+}
+
+function toggleWarRoom() {
+  if (warRoomActive) deactivateWarRoom();
+  else activateWarRoom('Manual activation');
+}
+
+// ── Manual cycle trigger ──────────────────────────────────────────────────────
+
+async function triggerCycle() {
+  try {
+    await api('/api/command/run', 'POST');
+    await refresh();
+  } catch(e) {}
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function refresh() {
+  await Promise.all([loadCommandState(), loadSignals()]);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+refresh();
+setInterval(refresh, 15000);    // refresh every 15 seconds
+setInterval(triggerCycle, 120000); // run full intel cycle every 2 min
+</script>
+</body>
+</html>
