@@ -88,87 +88,284 @@
     .worker-station {
       position: absolute;
       display: flex; flex-direction: column; align-items: center;
-      transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
-      z-index: 10;
+      transition: all 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 10; cursor: pointer;
     }
+    .worker-station:hover .app-label { text-decoration: underline; }
 
     /* Positions for 5 stations */
-    #station-pulse    { left: 8%;  top: 55px; }
-    #station-beacon   { left: 26%; top: 55px; }
-    #station-market   { left: 44%; top: 55px; }
-    #station-orderflow{ left: 62%; top: 55px; }
-    #station-command  { left: 80%; top: 55px; }
+    #station-pulse    { left: 8%;  top: 42px; }
+    #station-beacon   { left: 25%; top: 42px; }
+    #station-market   { left: 43%; top: 42px; }
+    #station-orderflow{ left: 61%; top: 42px; }
+    #station-command  { left: 79%; top: 42px; }
 
-    /* WAR ROOM mode — all to conference table */
-    .war-room #station-pulse     { left: 12%;  top: 200px; }
-    .war-room #station-beacon    { left: 27%;  top: 200px; }
-    .war-room #station-market    { left: 42%;  top: 200px; }
-    .war-room #station-orderflow { left: 57%;  top: 200px; }
-    .war-room #station-command   { left: 72%;  top: 200px; }
+    /* WAR ROOM mode — move to conference table sides */
+    .war-room #station-pulse     { left: 10%; top: 180px; }
+    .war-room #station-beacon    { left: 25%; top: 180px; }
+    .war-room #station-market    { left: 41%; top: 180px; }
+    .war-room #station-orderflow { left: 57%; top: 180px; }
+    .war-room #station-command   { left: 73%; top: 180px; }
 
-    /* Conference table */
-    #confTable {
-      position: absolute; left: 50%; top: 120px;
-      transform: translateX(-50%);
-      width: 600px; height: 80px;
-      background: linear-gradient(180deg, #1a2510 0%, #0d1a0a 100%);
-      border: 2px solid #2a3a20; border-radius: 40px;
-      opacity: 0; transition: opacity 0.8s;
-      display: flex; align-items: center; justify-content: center;
+    /* ── CHARACTER FIGURE ── */
+    .char-figure {
+      display: flex; flex-direction: column; align-items: center;
+      position: relative;
     }
-    .war-room #confTable { opacity: 1; }
-    .conf-label { font-size: 11px; color: #4a6a3a; letter-spacing: .1em; }
+    /* Idle bobs — staggered per station */
+    #station-pulse     .char-figure { animation: idleBob 2.8s ease-in-out infinite 0.0s; }
+    #station-beacon    .char-figure { animation: idleBob 3.1s ease-in-out infinite 0.55s; }
+    #station-market    .char-figure { animation: idleBob 2.5s ease-in-out infinite 1.1s; }
+    #station-orderflow .char-figure { animation: idleBob 3.3s ease-in-out infinite 1.65s; }
+    #station-command   .char-figure { animation: idleLean 4.5s ease-in-out infinite; }
+
+    @keyframes idleBob {
+      0%,100% { transform: translateY(0px); }
+      40%     { transform: translateY(-6px); }
+      65%     { transform: translateY(-3px); }
+    }
+    @keyframes idleLean {
+      0%,100% { transform: rotate(-1.5deg) translateY(0); }
+      50%     { transform: rotate(1.5deg) translateY(-3px); }
+    }
+
+    /* Walking bob for war room transition */
+    .war-room #station-pulse     .char-figure { animation: walkBob 0.28s steps(2) infinite 0.00s !important; }
+    .war-room #station-beacon    .char-figure { animation: walkBob 0.28s steps(2) infinite 0.07s !important; }
+    .war-room #station-market    .char-figure { animation: walkBob 0.28s steps(2) infinite 0.14s !important; }
+    .war-room #station-orderflow .char-figure { animation: walkBob 0.28s steps(2) infinite 0.21s !important; }
+    .war-room #station-command   .char-figure { animation: walkBob 0.32s steps(2) infinite 0.28s !important; }
+    @keyframes walkBob {
+      0%,100% { transform: translateY(0) scaleX(1); }
+      50%     { transform: translateY(-6px) scaleX(0.94); }
+    }
+
+    .worker {
+      font-size: 38px; line-height: 1; user-select: none;
+      filter: drop-shadow(0 3px 5px rgba(0,0,0,.7));
+      transition: transform 0.3s;
+    }
+    .worker.alert { animation: workerAlert 0.45s ease 3; }
+    @keyframes workerAlert {
+      0%,100%{ transform: scale(1) rotate(0deg); }
+      33%    { transform: scale(1.4) rotate(-8deg); }
+      66%    { transform: scale(1.4) rotate(8deg); }
+    }
+
+    /* Suit/body below emoji head */
+    .char-suit {
+      width: 38px; height: 26px; border-radius: 7px 7px 0 0;
+      margin-top: -10px; position: relative;
+      box-shadow: inset 0 -4px 8px rgba(0,0,0,.5), inset 0 1px 2px rgba(255,255,255,.12);
+    }
+    .suit-pulse    { background: linear-gradient(165deg,#8b5cf6,#5b21b6); }
+    .suit-beacon   { background: linear-gradient(165deg,#3b82f6,#1d4ed8); }
+    .suit-market   { background: linear-gradient(165deg,#22c55e,#15803d); }
+    .suit-orderflow{ background: linear-gradient(165deg,#fb923c,#c2410c); }
+    .suit-command  { background: linear-gradient(165deg,#f87171,#b91c1c); }
+
+    /* ID badge on suit */
+    .char-badge {
+      position: absolute; top: 5px; left: 7px;
+      width: 10px; height: 7px; border-radius: 2px;
+      background: rgba(255,255,255,.3);
+      animation: badgeBlink 2.5s ease-in-out infinite;
+    }
+    @keyframes badgeBlink { 0%,100%{opacity:.3} 50%{opacity:.9} }
+
+    /* Arms */
+    .char-arms {
+      display: flex; justify-content: space-between;
+      width: 54px; margin-top: -2px;
+    }
+    .char-arm {
+      width: 13px; height: 20px; border-radius: 7px;
+      box-shadow: inset 0 -3px 5px rgba(0,0,0,.5);
+      animation: armType 0.72s linear infinite;
+    }
+    .arm-pulse    { background:#7c3aed; animation-delay:0.00s; }
+    .arm-beacon   { background:#2563eb; animation-delay:0.18s; }
+    .arm-market   { background:#16a34a; animation-delay:0.36s; }
+    .arm-orderflow{ background:#ea580c; animation-delay:0.54s; }
+    .arm-command  { background:#dc2626; animation-duration:1.6s; }
+    @keyframes armType {
+      0%  { transform: translateX(0) translateY(0) rotate(0deg); }
+      20% { transform: translateX(-3px) translateY(3px) rotate(-5deg); }
+      40% { transform: translateX(2px) translateY(1px) rotate(3deg); }
+      60% { transform: translateX(-2px) translateY(3px) rotate(-3deg); }
+      80% { transform: translateX(3px) translateY(1px) rotate(4deg); }
+      100%{ transform: translateX(0) translateY(0) rotate(0deg); }
+    }
 
     /* ── DESK ── */
     .desk {
-      width: 120px; height: 70px;
-      background: linear-gradient(180deg, #1a2535 0%, #0d1a2a 100%);
-      border: 1px solid var(--border); border-radius: 4px;
-      position: relative; margin-top: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,.5);
+      width: 130px; height: 76px;
+      background: linear-gradient(180deg, #1e2d42 0%, #0f1d30 100%);
+      border: 1px solid #253548; border-radius: 5px;
+      position: relative; margin-top: 6px;
+      box-shadow: 0 5px 18px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05);
+      transition: box-shadow 0.4s;
     }
-    .desk::before {
-      content: ''; position: absolute; top: 8px; left: 10px; right: 10px; height: 32px;
-      background: linear-gradient(180deg, #0a1520 0%, #060d18 100%);
-      border: 1px solid #1a2535; border-radius: 2px;
+    .desk.active { box-shadow: 0 5px 18px rgba(0,0,0,.7), 0 0 20px rgba(59,130,246,.15); }
+
+    /* Monitor screen */
+    .desk-screen {
+      position: absolute; top: 6px; left: 8px; right: 8px; height: 36px;
+      background: #030c14; border: 1px solid #1a2535; border-radius: 3px;
+      overflow: hidden; transition: box-shadow 0.4s;
+      box-shadow: inset 0 0 8px rgba(59,130,246,.04);
     }
-    /* Monitor glow */
-    .desk::after {
-      content: ''; position: absolute; top: 9px; left: 11px; right: 11px; height: 30px;
-      background: radial-gradient(ellipse at 50% 50%, rgba(59,130,246,.05) 0%, transparent 70%);
-      border-radius: 2px; transition: background 0.3s;
+    .desk.active .desk-screen { box-shadow: inset 0 0 14px rgba(59,130,246,.22); }
+
+    /* Scrolling data on monitor */
+    .screen-data {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; flex-direction: column; gap: 3px; padding: 4px;
+      animation: screenScroll 4.5s linear infinite;
     }
-    .desk.active::after {
-      background: radial-gradient(ellipse at 50% 50%, rgba(59,130,246,.2) 0%, transparent 70%);
+    /* Each station's data lines have different colours */
+    #station-pulse     .screen-line { background: rgba(168,85,247,.55); }
+    #station-beacon    .screen-line { background: rgba(59,130,246,.55); }
+    #station-market    .screen-line { background: rgba(34,197,94,.55); }
+    #station-orderflow .screen-line { background: rgba(249,115,22,.55); }
+    #station-command   .screen-line { background: rgba(239,68,68,.55); }
+
+    .screen-line { height: 2px; border-radius: 1px; }
+    .screen-line-dim { opacity: 0.3; }
+    @keyframes screenScroll {
+      0%   { transform: translateY(0); }
+      100% { transform: translateY(-55px); }
     }
 
-    /* ── WORKER CHARACTER ── */
-    .worker { font-size: 36px; line-height: 1; cursor: default; user-select: none; transition: transform 0.3s; }
-    .worker.alert { animation: workerAlert 0.5s ease 3; }
-    @keyframes workerAlert {
-      0%,100%{transform:scale(1)} 50%{transform:scale(1.3)}
+    /* Keyboard strip */
+    .desk-kbd {
+      position: absolute; bottom: 8px; left: 10px; right: 10px; height: 12px;
+      background: #1a2535; border-radius: 2px;
+      background-image: repeating-linear-gradient(90deg,
+        rgba(255,255,255,.06) 0px, rgba(255,255,255,.06) 4px,
+        transparent 4px, transparent 8px);
+      transition: background-image 0.2s;
     }
+    .desk.active .desk-kbd {
+      background-image: repeating-linear-gradient(90deg,
+        rgba(59,130,246,.28) 0px, rgba(59,130,246,.28) 4px,
+        transparent 4px, transparent 8px);
+      animation: kbdFlash 0.12s steps(2) infinite;
+    }
+    @keyframes kbdFlash { 0%,100%{opacity:1} 50%{opacity:.55} }
+
+    /* Desk legs */
+    .desk-legs {
+      display: flex; justify-content: space-between; padding: 0 10px;
+    }
+    .desk-leg {
+      width: 8px; height: 10px; background: #0f1a28;
+      border-radius: 0 0 3px 3px; border: 1px solid #1a2535; border-top: none;
+    }
+
+    /* Chair */
+    .desk-chair {
+      width: 44px; height: 8px; background: #1a2535;
+      border-radius: 3px; border: 1px solid #253548; margin: 0 auto;
+      position: relative; transition: all 1.2s cubic-bezier(0.4,0,0.2,1);
+    }
+    .desk-chair::before {        /* chair back */
+      content: ''; position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+      width: 38px; height: 15px; background: #1a2535;
+      border-radius: 3px 3px 0 0; border: 1px solid #253548; border-bottom: none;
+    }
+    /* Chairs slide away in war room */
+    .war-room #station-pulse     .desk-chair { transform: translateX(36px) rotate(22deg); opacity:.35; }
+    .war-room #station-beacon    .desk-chair { transform: translateX(-36px) rotate(-18deg); opacity:.35; }
+    .war-room #station-market    .desk-chair { transform: translateX(28px) rotate(14deg); opacity:.35; }
+    .war-room #station-orderflow .desk-chair { transform: translateX(-32px) rotate(-22deg); opacity:.35; }
+    .war-room #station-command   .desk-chair { transform: translateY(24px) rotate(180deg); opacity:.35; }
 
     /* App name label */
     .app-label {
       font-size: 10px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .1em; margin-top: 6px; color: var(--muted);
+      letter-spacing: .1em; margin-top: 5px; color: var(--muted);
     }
-    .app-label.pulse-color { color: #a855f7; }
-    .app-label.beacon-color { color: #3b82f6; }
-    .app-label.market-color { color: #22c55e; }
+    .app-label.pulse-color     { color: #a855f7; }
+    .app-label.beacon-color    { color: #3b82f6; }
+    .app-label.market-color    { color: #22c55e; }
     .app-label.orderflow-color { color: #f97316; }
-    .app-label.command-color { color: #ef4444; }
+    .app-label.command-color   { color: #ef4444; }
 
     /* Status dot */
     .status-dot {
-      width: 6px; height: 6px; border-radius: 50%;
+      width: 7px; height: 7px; border-radius: 50%;
       background: var(--muted); position: absolute; top: -2px; right: -2px;
       transition: background 0.3s;
     }
     .status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
-    .status-dot.active { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); animation: dotPulse 0.8s infinite; }
-    @keyframes dotPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .status-dot.active { background: var(--yellow); box-shadow: 0 0 10px var(--yellow); animation: dotPulse 0.8s infinite; }
+    @keyframes dotPulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+    /* ── CONFERENCE TABLE ── */
+    #confTable {
+      position: absolute; left: 50%; top: 120px;
+      transform: translateX(-50%);
+      width: 640px; height: 95px;
+      background: linear-gradient(180deg, #0f1f10 0%, #0a1508 100%);
+      border: 2px solid #1e3a1e; border-radius: 48px;
+      opacity: 0; transition: opacity 0.9s, box-shadow 0.9s;
+      overflow: hidden;
+    }
+    .war-room #confTable {
+      opacity: 1;
+      box-shadow: 0 0 50px rgba(34,197,94,.18), 0 0 100px rgba(34,197,94,.07), inset 0 1px 0 rgba(34,197,94,.1);
+      border-color: #2a4a2a;
+    }
+    /* Table surface scan line */
+    .conf-scan {
+      position: absolute; top: 0; height: 100%; width: 4px;
+      background: linear-gradient(90deg, transparent, rgba(34,197,94,.18), transparent);
+      left: -10px; opacity: 0; transition: opacity 0.5s 1s;
+      animation: tableScan 5s linear infinite;
+    }
+    .war-room .conf-scan { opacity: 1; }
+    @keyframes tableScan { 0%{left:-10px} 100%{left:110%} }
+
+    /* Holographic center display */
+    #confHolo {
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%,-50%);
+      width: 80px; height: 80px;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity 1.2s 0.7s;
+    }
+    .war-room #confHolo { opacity: 1; }
+    .holo-ring-1 {
+      position: absolute; width: 70px; height: 70px; border-radius: 50%;
+      border: 1px solid rgba(34,197,94,.35);
+      animation: holoSpin 9s linear infinite;
+    }
+    .holo-ring-2 {
+      position: absolute; width: 48px; height: 48px; border-radius: 50%;
+      border: 1px dashed rgba(34,197,94,.2);
+      animation: holoSpin 6s linear infinite reverse;
+    }
+    .holo-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: rgba(34,197,94,.7);
+      box-shadow: 0 0 12px rgba(34,197,94,.9), 0 0 24px rgba(34,197,94,.4);
+      animation: holoPulse 1.8s ease-in-out infinite;
+    }
+    @keyframes holoSpin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    @keyframes holoPulse { 0%,100%{opacity:.6;transform:scale(1)} 50%{opacity:1;transform:scale(1.4)} }
+
+    /* Seat dots around table edge */
+    .conf-seat {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 1px solid rgba(34,197,94,.25);
+      background: rgba(34,197,94,.05);
+      opacity: 0; transition: opacity 0.6s;
+    }
+    .war-room .conf-seat { opacity: 1; }
+    .seat-1{left:6%}   .seat-2{left:21%}  .seat-3{left:37%}
+    .seat-4{left:54%}  .seat-5{left:70%}
 
     /* ── SPEECH BUBBLE ── */
     .speech-bubble {
@@ -346,7 +543,19 @@
   <div id="officeFloor">
 
     <!-- Conference table (war room mode) -->
-    <div id="confTable"><span class="conf-label">⬛ SITUATION ROOM ⬛</span></div>
+    <div id="confTable">
+      <div class="conf-scan"></div>
+      <div id="confHolo">
+        <div class="holo-ring-1"></div>
+        <div class="holo-ring-2"></div>
+        <div class="holo-dot"></div>
+      </div>
+      <div class="conf-seat seat-1"></div>
+      <div class="conf-seat seat-2"></div>
+      <div class="conf-seat seat-3"></div>
+      <div class="conf-seat seat-4"></div>
+      <div class="conf-seat seat-5"></div>
+    </div>
 
     <!-- War room banner -->
     <div id="warRoomBanner">
@@ -356,11 +565,34 @@
 
     <!-- Worker stations -->
     <div class="worker-station" id="station-pulse" onclick="location.href='/pulse'" title="Open Pulse Desk">
-      <div style="position:relative">
-        <div class="worker" id="worker-pulse">🕵️</div>
-        <div class="status-dot" id="dot-pulse"></div>
+      <div class="char-figure">
+        <div style="position:relative">
+          <div class="worker" id="worker-pulse">🕵️</div>
+          <div class="status-dot" id="dot-pulse"></div>
+        </div>
+        <div class="char-suit suit-pulse"><div class="char-badge"></div></div>
+        <div class="char-arms">
+          <div class="char-arm arm-pulse"></div>
+          <div class="char-arm arm-pulse"></div>
+        </div>
       </div>
-      <div class="desk" id="desk-pulse"></div>
+      <div class="desk" id="desk-pulse">
+        <div class="desk-screen">
+          <div class="screen-data">
+            <div class="screen-line" style="width:82%"></div>
+            <div class="screen-line screen-line-dim" style="width:58%"></div>
+            <div class="screen-line" style="width:91%"></div>
+            <div class="screen-line screen-line-dim" style="width:44%"></div>
+            <div class="screen-line" style="width:73%"></div>
+            <div class="screen-line screen-line-dim" style="width:66%"></div>
+            <div class="screen-line" style="width:87%"></div>
+            <div class="screen-line screen-line-dim" style="width:52%"></div>
+          </div>
+        </div>
+        <div class="desk-kbd"></div>
+      </div>
+      <div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+      <div class="desk-chair"></div>
       <div class="app-label pulse-color">Pulse</div>
       <div class="speech-bubble" id="bubble-pulse">
         <div class="bubble-dir neutral">Standby</div>
@@ -369,11 +601,34 @@
     </div>
 
     <div class="worker-station" id="station-beacon" onclick="location.href='/beacon'" title="Open Beacon Desk">
-      <div style="position:relative">
-        <div class="worker" id="worker-beacon">📡</div>
-        <div class="status-dot" id="dot-beacon"></div>
+      <div class="char-figure">
+        <div style="position:relative">
+          <div class="worker" id="worker-beacon">📡</div>
+          <div class="status-dot" id="dot-beacon"></div>
+        </div>
+        <div class="char-suit suit-beacon"><div class="char-badge"></div></div>
+        <div class="char-arms">
+          <div class="char-arm arm-beacon"></div>
+          <div class="char-arm arm-beacon"></div>
+        </div>
       </div>
-      <div class="desk" id="desk-beacon"></div>
+      <div class="desk" id="desk-beacon">
+        <div class="desk-screen">
+          <div class="screen-data">
+            <div class="screen-line" style="width:76%"></div>
+            <div class="screen-line screen-line-dim" style="width:62%"></div>
+            <div class="screen-line" style="width:88%"></div>
+            <div class="screen-line screen-line-dim" style="width:48%"></div>
+            <div class="screen-line" style="width:79%"></div>
+            <div class="screen-line screen-line-dim" style="width:55%"></div>
+            <div class="screen-line" style="width:93%"></div>
+            <div class="screen-line screen-line-dim" style="width:41%"></div>
+          </div>
+        </div>
+        <div class="desk-kbd"></div>
+      </div>
+      <div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+      <div class="desk-chair"></div>
       <div class="app-label beacon-color">Beacon</div>
       <div class="speech-bubble" id="bubble-beacon">
         <div class="bubble-dir neutral">Standby</div>
@@ -382,11 +637,34 @@
     </div>
 
     <div class="worker-station" id="station-market" onclick="location.href='/market-desk'" title="Open Market Desk">
-      <div style="position:relative">
-        <div class="worker" id="worker-market">📊</div>
-        <div class="status-dot" id="dot-market"></div>
+      <div class="char-figure">
+        <div style="position:relative">
+          <div class="worker" id="worker-market">📊</div>
+          <div class="status-dot" id="dot-market"></div>
+        </div>
+        <div class="char-suit suit-market"><div class="char-badge"></div></div>
+        <div class="char-arms">
+          <div class="char-arm arm-market"></div>
+          <div class="char-arm arm-market"></div>
+        </div>
       </div>
-      <div class="desk" id="desk-market"></div>
+      <div class="desk" id="desk-market">
+        <div class="desk-screen">
+          <div class="screen-data">
+            <div class="screen-line" style="width:70%"></div>
+            <div class="screen-line screen-line-dim" style="width:55%"></div>
+            <div class="screen-line" style="width:85%"></div>
+            <div class="screen-line screen-line-dim" style="width:40%"></div>
+            <div class="screen-line" style="width:78%"></div>
+            <div class="screen-line screen-line-dim" style="width:62%"></div>
+            <div class="screen-line" style="width:95%"></div>
+            <div class="screen-line screen-line-dim" style="width:47%"></div>
+          </div>
+        </div>
+        <div class="desk-kbd"></div>
+      </div>
+      <div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+      <div class="desk-chair"></div>
       <div class="app-label market-color">Market</div>
       <div class="speech-bubble" id="bubble-market">
         <div class="bubble-dir neutral">Standby</div>
@@ -395,11 +673,34 @@
     </div>
 
     <div class="worker-station" id="station-orderflow" onclick="location.href='/orderflow'" title="Open OrderFlow Desk">
-      <div style="position:relative">
-        <div class="worker" id="worker-orderflow">📈</div>
-        <div class="status-dot" id="dot-orderflow"></div>
+      <div class="char-figure">
+        <div style="position:relative">
+          <div class="worker" id="worker-orderflow">📈</div>
+          <div class="status-dot" id="dot-orderflow"></div>
+        </div>
+        <div class="char-suit suit-orderflow"><div class="char-badge"></div></div>
+        <div class="char-arms">
+          <div class="char-arm arm-orderflow"></div>
+          <div class="char-arm arm-orderflow"></div>
+        </div>
       </div>
-      <div class="desk" id="desk-orderflow"></div>
+      <div class="desk" id="desk-orderflow">
+        <div class="desk-screen">
+          <div class="screen-data">
+            <div class="screen-line" style="width:84%"></div>
+            <div class="screen-line screen-line-dim" style="width:50%"></div>
+            <div class="screen-line" style="width:72%"></div>
+            <div class="screen-line screen-line-dim" style="width:68%"></div>
+            <div class="screen-line" style="width:90%"></div>
+            <div class="screen-line screen-line-dim" style="width:43%"></div>
+            <div class="screen-line" style="width:81%"></div>
+            <div class="screen-line screen-line-dim" style="width:57%"></div>
+          </div>
+        </div>
+        <div class="desk-kbd"></div>
+      </div>
+      <div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+      <div class="desk-chair"></div>
       <div class="app-label orderflow-color">OrderFlow</div>
       <div class="speech-bubble" id="bubble-orderflow">
         <div class="bubble-dir neutral">Standby</div>
@@ -408,11 +709,34 @@
     </div>
 
     <div class="worker-station" id="station-command">
-      <div style="position:relative">
-        <div class="worker" id="worker-command">🎖️</div>
-        <div class="status-dot online" id="dot-command"></div>
+      <div class="char-figure">
+        <div style="position:relative">
+          <div class="worker" id="worker-command">🎖️</div>
+          <div class="status-dot online" id="dot-command"></div>
+        </div>
+        <div class="char-suit suit-command"><div class="char-badge"></div></div>
+        <div class="char-arms">
+          <div class="char-arm arm-command"></div>
+          <div class="char-arm arm-command"></div>
+        </div>
       </div>
-      <div class="desk" id="desk-command"></div>
+      <div class="desk" id="desk-command">
+        <div class="desk-screen">
+          <div class="screen-data">
+            <div class="screen-line" style="width:94%"></div>
+            <div class="screen-line screen-line-dim" style="width:64%"></div>
+            <div class="screen-line" style="width:77%"></div>
+            <div class="screen-line screen-line-dim" style="width:53%"></div>
+            <div class="screen-line" style="width:89%"></div>
+            <div class="screen-line screen-line-dim" style="width:46%"></div>
+            <div class="screen-line" style="width:83%"></div>
+            <div class="screen-line screen-line-dim" style="width:71%"></div>
+          </div>
+        </div>
+        <div class="desk-kbd"></div>
+      </div>
+      <div class="desk-legs"><div class="desk-leg"></div><div class="desk-leg"></div></div>
+      <div class="desk-chair"></div>
       <div class="app-label command-color">Command</div>
       <div class="speech-bubble" id="bubble-command">
         <div class="bubble-dir neutral">Online</div>

@@ -1,8 +1,11 @@
 """
 First Strike Pulse — X/Twitter Intelligence Module
-Monitors curated accounts and keywords for early Iran/military signals.
-Fetches ~10-20 tweets per minute. Authors are AI-weighted via profile lookup.
-Requires env var: TWITTER_API_KEY (twitterapi.io)
+Uses twitterapi.io (KaitoTwitterAPI) correct endpoints:
+  - Search: GET /twitter/tweet/advanced_search  (queryType="Latest")
+  - Timeline: GET /twitter/user/last_tweets     (userName=X)
+  - Profile:  GET /twitter/user/info            (userName=X)
+Response shape: { "tweets": [...], "has_next_page": bool }
+Tweet fields: id, text, createdAt, author.userName, author.followers, author.isBlueVerified
 """
 from __future__ import annotations
 import os
@@ -14,33 +17,29 @@ from typing import Optional
 from .signals import Signal, store_signal, MARKET_SLUG
 
 TWITTER_API_KEY = os.environ.get("TWITTER_API_KEY", "")
-TWITTERAPI_BASE = "https://api.twitterapi.io/twitter"
+TWITTERAPI_BASE = "https://api.twitterapi.io"   # NOTE: no /twitter suffix on base
 
 # ── Monitored accounts ────────────────────────────────────────────────────────
-MONITORED_ACCOUNTS = [
-    "DeptofDefense", "CENTCOM", "SecDef", "StateDept", "POTUS",
-    "Reuters", "AP", "BBCWorld", "AlMonitor", "RALee85",
-    "Natsecjeff", "AmbJohnBolton", "KenRoth", "borzou",
-    "iranintl", "IrnaEnglish", "PressTV",
-    "OSINTdefender", "IntelCrab", "WarMonitor_",
-    "LaurenEtta", "IranWire", "RadioFarda_", "VOAIran",
-    "HamedFard", "MaziarBahari",
+PRIORITY_ACCOUNTS = [
+    "DeptofDefense", "CENTCOM", "StateDept", "POTUS",
+    "iranintl", "VOAIran", "RadioFarda_",
+    "Reuters", "AP", "BBCWorld",
 ]
 
-# ── Search queries (rotated each cycle for variety) ──────────────────────────
+# ── Search queries (rotated each cycle) ──────────────────────────────────────
 SEARCH_QUERIES = [
-    "iran troops lang:en -is:retweet",
-    "US military iran lang:en -is:retweet",
-    "iran war 2025 lang:en -is:retweet",
-    "pentagon iran lang:en -is:retweet",
-    "CENTCOM iran lang:en -is:retweet",
-    "iran invasion ground forces lang:en -is:retweet",
-    "boots on ground iran lang:en -is:retweet",
-    "iran nuclear strike lang:en -is:retweet",
-    "IRGC deploy lang:en -is:retweet",
-    "iran military operation lang:en -is:retweet",
-    "iran escalation lang:en -is:retweet",
-    "iran attack response lang:en -is:retweet",
+    "iran troops military",
+    "US iran invasion",
+    "CENTCOM iran",
+    "pentagon iran",
+    "iran war 2025",
+    "iran ground forces",
+    "boots iran ground",
+    "iran nuclear strike",
+    "IRGC deployment",
+    "iran military operation",
+    "iran escalation",
+    "iran attack US forces",
 ]
 
 # ── Pre-known credibility scores ──────────────────────────────────────────────
@@ -51,49 +50,95 @@ CREDIBILITY_MAP = {
     "iranintl": 75, "IrnaEnglish": 60, "PressTV": 38,
     "OSINTdefender": 68, "IntelCrab": 66, "WarMonitor_": 63,
     "IranWire": 72, "RadioFarda_": 72, "VOAIran": 75,
-    "LaurenEtta": 70, "MaziarBahari": 68, "HamedFard": 65,
     "borzou": 70, "AmbJohnBolton": 72, "KenRoth": 68,
 }
 
-# ── Escalation / denial language ─────────────────────────────────────────────
 ESCALATION_TERMS = [
     "imminent", "immediate", "deployed", "invade", "invasion",
     "war", "strike", "attack", "crossed", "entered", "boots",
     "ground forces", "special operations", "soldiers", "troops",
     "military action", "armed forces", "incursion", "offensive",
     "airstrikes", "bombardment", "special forces", "marines",
-    "combat mission", "boots on the ground", "regime change",
-    "ground invasion", "military buildup", "forward deployed",
+    "combat mission", "boots on the ground", "ground invasion",
+    "military buildup", "forward deployed",
 ]
 
 DENIAL_TERMS = [
     "no plans", "not planning", "deny", "denied", "false", "misleading",
     "no troops", "not sending", "peace", "diplomatic", "de-escalate",
-    "ceasefire", "negotiations", "sanctions relief", "withdraw", "retreat",
+    "ceasefire", "negotiations", "sanctions relief", "withdraw",
     "no military action", "diplomatic solution",
 ]
 
-# ── Official-source keywords in bio ──────────────────────────────────────────
 OFFICIAL_BIO_TERMS = [
     "official", "government", "minister", "secretary", "pentagon",
     "ambassador", "department", "ministry", "general", "admiral",
-    "colonel", "senator", "congressman", "white house", "state dept",
-    "department of defense", "department of state", "nato",
+    "colonel", "senator", "congressman", "white house", "nato",
 ]
 
-# ── In-memory profile cache (persists for server lifetime) ───────────────────
 _PROFILE_CACHE: dict = {}
+_query_idx: int = 0
 
 
 def _headers() -> dict:
-    return {"X-API-Key": TWITTER_API_KEY, "Content-Type": "application/json"}
+    return {"X-API-Key": TWITTER_API_KEY}
+
+
+# ── API calls ─────────────────────────────────────────────────────────────────
+
+def search_tweets(query: str, count: int = 20) -> list:
+    """
+    Search recent tweets via twitterapi.io advanced_search.
+    Correct endpoint: GET /twitter/tweet/advanced_search
+    Required params: query (str), queryType ("Latest"|"Top")
+    """
+    if not TWITTER_API_KEY:
+        return []
+    try:
+        r = requests.get(
+            f"{TWITTERAPI_BASE}/twitter/tweet/advanced_search",
+            headers=_headers(),
+            params={"query": query, "queryType": "Latest"},
+            timeout=15,
+        )
+        if r.status_code == 200:
+            return r.json().get("tweets", [])
+        else:
+            print(f"[Pulse] search error {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        print(f"[Pulse] search exception: {e}")
+    return []
+
+
+def get_user_timeline(username: str, count: int = 10) -> list:
+    """
+    Fetch a user's recent tweets.
+    Correct endpoint: GET /twitter/user/last_tweets
+    Required params: userName (str)
+    """
+    if not TWITTER_API_KEY:
+        return []
+    try:
+        r = requests.get(
+            f"{TWITTERAPI_BASE}/twitter/user/last_tweets",
+            headers=_headers(),
+            params={"userName": username},
+            timeout=12,
+        )
+        if r.status_code == 200:
+            return r.json().get("tweets", [])
+        else:
+            print(f"[Pulse] timeline error {r.status_code} for @{username}: {r.text[:200]}")
+    except Exception as e:
+        print(f"[Pulse] timeline exception for @{username}: {e}")
+    return []
 
 
 def get_user_profile(username: str) -> dict:
     """
-    Fetch Twitter user profile via twitterapi.io.
-    Returns followers_count, verified, description, name.
-    Results cached in _PROFILE_CACHE.
+    Fetch Twitter user profile for credibility scoring.
+    Correct endpoint: GET /twitter/user/info
+    Response: { "data": { "userName", "followers", "isBlueVerified", "description", ... } }
     """
     if username in _PROFILE_CACHE:
         return _PROFILE_CACHE[username]
@@ -101,42 +146,59 @@ def get_user_profile(username: str) -> dict:
         return {}
     try:
         r = requests.get(
-            f"{TWITTERAPI_BASE}/user/info",
+            f"{TWITTERAPI_BASE}/twitter/user/info",
             headers=_headers(),
             params={"userName": username},
-            timeout=8,
+            timeout=10,
         )
         if r.status_code == 200:
-            d = r.json()
-            # twitterapi.io may nest under "data" key
-            data = d.get("data", d)
+            raw = r.json()
+            data = raw.get("data", raw)
             profile = {
-                "followers": data.get("followers_count", data.get("followersCount", 0)),
-                "verified": bool(
-                    data.get("verified") or
-                    data.get("is_blue_verified") or
-                    data.get("isBlueVerified")
-                ),
-                "description": (data.get("description") or data.get("bio") or "").lower(),
-                "name": data.get("name", username),
-                "tweet_count": data.get("statuses_count", data.get("statusesCount", 0)),
+                "followers":    data.get("followers", 0),
+                "verified":     bool(data.get("isBlueVerified", False)),
+                "description":  (data.get("description", "") or "").lower(),
+                "name":         data.get("name", username),
             }
             _PROFILE_CACHE[username] = profile
             return profile
-    except Exception:
-        pass
+        else:
+            print(f"[Pulse] profile error {r.status_code} for @{username}")
+    except Exception as e:
+        print(f"[Pulse] profile exception for @{username}: {e}")
     _PROFILE_CACHE[username] = {}
     return {}
 
 
-def _author_credibility(username: str) -> int:
-    """
-    Compute author credibility 0-100 by combining:
-    - Pre-known score from CREDIBILITY_MAP
-    - Live Twitter profile data (followers, verified, bio keywords)
-    """
-    base = CREDIBILITY_MAP.get(username, 45)
+def _extract_author(tweet: dict) -> str:
+    """Extract username from twitterapi.io tweet object."""
+    # twitterapi.io nests author as tweet.author.userName
+    author = tweet.get("author", {})
+    return (
+        author.get("userName") or
+        author.get("username") or
+        author.get("screen_name") or
+        tweet.get("author_username") or
+        "unknown"
+    )
 
+
+def _extract_timestamp(tweet: dict) -> str:
+    """Extract ISO timestamp — twitterapi.io uses 'createdAt' not 'created_at'."""
+    return (
+        tweet.get("createdAt") or
+        tweet.get("created_at") or
+        datetime.now(timezone.utc).isoformat()
+    )
+
+
+def _extract_tweet_id(tweet: dict) -> str:
+    return str(tweet.get("id") or tweet.get("tweet_id") or "")
+
+
+def _author_credibility(username: str) -> int:
+    """Compute author credibility 0-100 from pre-known map + live profile data."""
+    base = CREDIBILITY_MAP.get(username, 45)
     profile = get_user_profile(username)
     if not profile:
         return base
@@ -145,70 +207,54 @@ def _author_credibility(username: str) -> int:
     verified  = profile.get("verified", False)
     bio       = profile.get("description", "")
 
-    # Follower count boost (log scale)
-    if followers >= 5_000_000:
-        base = max(base, 82)
-    elif followers >= 1_000_000:
-        base = max(base, 76)
-    elif followers >= 500_000:
-        base = max(base, 70)
-    elif followers >= 100_000:
-        base = max(base, 63)
-    elif followers >= 10_000:
-        base = max(base, 55)
+    # Follower count boost
+    if followers >= 5_000_000:  base = max(base, 82)
+    elif followers >= 1_000_000: base = max(base, 76)
+    elif followers >= 500_000:  base = max(base, 70)
+    elif followers >= 100_000:  base = max(base, 63)
+    elif followers >= 10_000:   base = max(base, 55)
 
-    # Verified account boost
     if verified:
         base = min(95, base + 8)
 
-    # Official bio language boost
-    official_bio_hits = sum(1 for t in OFFICIAL_BIO_TERMS if t in bio)
-    if official_bio_hits >= 2:
-        base = min(95, base + 10)
-    elif official_bio_hits == 1:
-        base = min(95, base + 5)
+    official_hits = sum(1 for t in OFFICIAL_BIO_TERMS if t in bio)
+    if official_hits >= 2: base = min(95, base + 10)
+    elif official_hits == 1: base = min(95, base + 5)
 
     return min(95, base)
 
 
-def _classify_author(credibility: int, username: str) -> str:
-    """Classify author tier for display."""
+def _classify(credibility: int, username: str) -> str:
     if username in ("DeptofDefense", "CENTCOM", "SecDef", "StateDept", "POTUS"):
         return "official"
-    if credibility >= 85:
-        return "official"
-    if credibility >= 68:
-        return "semi-confirmed"
-    if credibility >= 50:
-        return "analyst"
+    if credibility >= 85: return "official"
+    if credibility >= 68: return "semi-confirmed"
+    if credibility >= 50: return "analyst"
     return "unverified"
 
 
 def _score_tweet(text: str, username: str) -> dict:
-    """Score tweet for direction, confidence, importance, and impact."""
     text_lower = text.lower()
+    esc_hits  = sum(1 for t in ESCALATION_TERMS if t in text_lower)
+    deny_hits = sum(1 for t in DENIAL_TERMS if t in text_lower)
+    cred      = _author_credibility(username)
+    cls       = _classify(cred, username)
 
-    escalation_hits = sum(1 for t in ESCALATION_TERMS if t in text_lower)
-    denial_hits     = sum(1 for t in DENIAL_TERMS     if t in text_lower)
-
-    credibility = _author_credibility(username)
-    profile     = _PROFILE_CACHE.get(username, {})
-    cls         = _classify_author(credibility, username)
-
-    if escalation_hits > denial_hits:
+    if esc_hits > deny_hits:
         direction  = "bullish"
-        confidence = min(95, credibility + escalation_hits * 4)
-        impact     = round(escalation_hits * 1.5, 1)
-    elif denial_hits > escalation_hits:
+        confidence = min(95, cred + esc_hits * 4)
+        impact     = round(esc_hits * 1.5, 1)
+    elif deny_hits > esc_hits:
         direction  = "bearish"
-        confidence = min(95, credibility + denial_hits * 4)
-        impact     = round(-denial_hits * 1.5, 1)
+        confidence = min(95, cred + deny_hits * 4)
+        impact     = round(-deny_hits * 1.5, 1)
     else:
         direction  = "neutral"
-        confidence = max(20, credibility - 20)
+        confidence = max(20, cred - 20)
         impact     = 0.0
 
-    importance = min(100, credibility + escalation_hits * 8 + denial_hits * 5)
+    importance = min(100, cred + esc_hits * 8 + deny_hits * 5)
+    profile    = _PROFILE_CACHE.get(username, {})
 
     return {
         "direction":      direction,
@@ -216,117 +262,65 @@ def _score_tweet(text: str, username: str) -> dict:
         "importance":     importance,
         "impact":         impact,
         "classification": cls,
-        "credibility":    credibility,
-        "escalation_hits": escalation_hits,
+        "credibility":    cred,
+        "escalation_hits": esc_hits,
         "followers":      profile.get("followers", 0),
         "verified":       profile.get("verified", False),
     }
 
 
-def search_tweets(query: str, max_results: int = 20) -> list:
-    if not TWITTER_API_KEY:
-        return []
-    try:
-        r = requests.get(
-            f"{TWITTERAPI_BASE}/tweet/search/recent",
-            headers=_headers(),
-            params={
-                "query": query,
-                "max_results": max_results,
-                "tweet.fields": "created_at,author_id,public_metrics,author",
-            },
-            timeout=12,
-        )
-        if r.status_code == 200:
-            data = r.json()
-            return data.get("data", data.get("tweets", []))
-    except Exception:
-        pass
-    return []
-
-
-def get_user_timeline(username: str, max_results: int = 10) -> list:
-    if not TWITTER_API_KEY:
-        return []
-    try:
-        r = requests.get(
-            f"{TWITTERAPI_BASE}/user/last_tweets",
-            headers=_headers(),
-            params={"userName": username, "maxResults": max_results},
-            timeout=10,
-        )
-        if r.status_code == 200:
-            return r.json().get("tweets", [])
-    except Exception:
-        pass
-    return []
-
-
-# ── Rotating query index ──────────────────────────────────────────────────────
-_query_idx = 0
+def _fmt_followers(n: int) -> str:
+    if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
+    if n >= 1_000:     return f"{n/1_000:.0f}K"
+    return str(n)
 
 
 def run_pulse_cycle() -> list:
     """
     Run one full pulse cycle.
-    - Searches 3 rotating queries (20 tweets each = ~60 tweets/cycle)
-    - Monitors 4 high-priority accounts (5 tweets each)
-    - Scores each tweet with AI-derived author credibility
-    - Returns newly stored Signal objects
+    Rotates through 3 search queries (20 results each) + monitors priority accounts.
+    Returns list of newly stored Signal objects.
     """
     global _query_idx
     if not TWITTER_API_KEY:
+        print("[Pulse] No TWITTER_API_KEY set — skipping cycle")
         return []
 
     new_signals = []
-    seen_texts: set = set()
+    seen: set = set()
 
-    # 1. Rotating search queries — pick 3 from the list each cycle
-    cycle_queries = []
-    for i in range(3):
-        cycle_queries.append(SEARCH_QUERIES[(_query_idx + i) % len(SEARCH_QUERIES)])
+    # 1. Rotating search queries — 3 per cycle
+    queries = [SEARCH_QUERIES[(_query_idx + i) % len(SEARCH_QUERIES)] for i in range(3)]
     _query_idx = (_query_idx + 3) % len(SEARCH_QUERIES)
 
-    for query in cycle_queries:
-        tweets = search_tweets(query, max_results=20)
-        for tweet in tweets:
-            text = tweet.get("text", tweet.get("full_text", ""))
-            if not text or text[:60] in seen_texts:
+    for query in queries:
+        tweets = search_tweets(query, count=20)
+        print(f"[Pulse] query='{query}' → {len(tweets)} tweets")
+        for tw in tweets:
+            text = tw.get("text", "")
+            if not text or text[:60] in seen:
                 continue
-            seen_texts.add(text[:60])
+            seen.add(text[:60])
 
-            # Try to get username from nested author field
-            author_obj = tweet.get("author", tweet.get("user", {}))
-            username = (
-                author_obj.get("userName") or
-                author_obj.get("username") or
-                author_obj.get("screen_name") or
-                tweet.get("author_username") or
-                tweet.get("author_id", "unknown")
-            )
+            username = _extract_author(tw)
+            score    = _score_tweet(text, username)
 
-            score = _score_tweet(text, username)
-
-            # Filter out noise — require some escalation or decent credibility
             if score["importance"] < 28 and score["escalation_hits"] == 0:
                 continue
 
-            followers = score["followers"]
-            verified  = score["verified"]
-            credibility = score["credibility"]
-            cls = score["classification"]
-
+            tw_id = _extract_tweet_id(tw)
             reasoning = (
-                f"[{cls}] @{username} "
-                f"(cred:{credibility} flw:{_fmt_followers(followers)}"
-                f"{' ✓verified' if verified else ''}) — "
+                f"[{score['classification']}] @{username} "
+                f"(cred:{score['credibility']} "
+                f"flw:{_fmt_followers(score['followers'])}"
+                f"{' ✓' if score['verified'] else ''}) — "
                 f"{score['escalation_hits']} escalation term(s). "
                 f"Query: '{query}'"
             )
 
             sig = Signal(
                 source_app="pulse",
-                timestamp=tweet.get("created_at", datetime.now(timezone.utc).isoformat()),
+                timestamp=_extract_timestamp(tw),
                 headline=text[:120],
                 raw_text=text,
                 signal_direction=score["direction"],
@@ -334,44 +328,37 @@ def run_pulse_cycle() -> list:
                 importance_score=score["importance"],
                 probability_impact_estimate=score["impact"],
                 reasoning=reasoning,
-                link=f"https://twitter.com/i/web/status/{tweet.get('id', tweet.get('tweet_id', ''))}",
+                link=f"https://twitter.com/i/web/status/{tw_id}" if tw_id else "",
                 market_slug=MARKET_SLUG,
             )
             if store_signal(sig):
                 new_signals.append(sig)
 
-    # 2. High-priority account monitoring
-    priority_accounts = ["DeptofDefense", "CENTCOM", "StateDept", "iranintl", "VOAIran"]
-    for account in priority_accounts:
-        tweets = get_user_timeline(account, max_results=5)
-        for tweet in tweets:
-            text = tweet.get("text", tweet.get("full_text", ""))
-            if not text or text[:60] in seen_texts:
+    # 2. Priority account monitoring
+    for account in PRIORITY_ACCOUNTS:
+        tweets = get_user_timeline(account, count=5)
+        for tw in tweets:
+            text = tw.get("text", "")
+            if not text or text[:60] in seen:
                 continue
-            iran_relevant = any(
+            iran_rel = any(
                 kw in text.lower()
-                for kw in ["iran", "tehran", "irgc", "persian", "hormuz", "nuclear"]
+                for kw in ["iran", "tehran", "irgc", "persian", "hormuz", "nuclear", "centcom"]
             )
-            if not iran_relevant:
+            if not iran_rel:
                 continue
-            seen_texts.add(text[:60])
+            seen.add(text[:60])
             score = _score_tweet(text, account)
 
-            credibility = score["credibility"]
-            cls = score["classification"]
-            profile = _PROFILE_CACHE.get(account, {})
-            followers = profile.get("followers", CREDIBILITY_MAP.get(account, 50) * 10000)
-            verified  = profile.get("verified", credibility >= 85)
-
             reasoning = (
-                f"[{cls}] Official account @{account} "
-                f"(cred:{credibility} flw:{_fmt_followers(followers)}"
-                f"{' ✓verified' if verified else ''})"
+                f"[{score['classification']}] Official account @{account} "
+                f"(cred:{score['credibility']}"
+                f"{' ✓' if score['verified'] else ''})"
             )
 
             sig = Signal(
                 source_app="pulse",
-                timestamp=tweet.get("created_at", datetime.now(timezone.utc).isoformat()),
+                timestamp=_extract_timestamp(tw),
                 headline=text[:120],
                 raw_text=text,
                 signal_direction=score["direction"],
@@ -385,13 +372,5 @@ def run_pulse_cycle() -> list:
             if store_signal(sig):
                 new_signals.append(sig)
 
+    print(f"[Pulse] cycle complete — {len(new_signals)} new signals stored")
     return new_signals
-
-
-def _fmt_followers(n: int) -> str:
-    """Human-readable follower count."""
-    if n >= 1_000_000:
-        return f"{n/1_000_000:.1f}M"
-    if n >= 1_000:
-        return f"{n/1_000:.0f}K"
-    return str(n)

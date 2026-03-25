@@ -248,6 +248,53 @@ def run_pulse(background_tasks: BackgroundTasks):
     return {"triggered": True}
 
 
+@app.get("/api/pulse/debug")
+def pulse_debug():
+    """
+    Live diagnostic: calls twitterapi.io directly and returns raw response.
+    Use this to verify API key + endpoint are working.
+    """
+    import os
+    import requests as req
+    key = os.environ.get("TWITTER_API_KEY", "")
+    if not key:
+        return {"error": "TWITTER_API_KEY env var not set", "configured": False}
+
+    results = {}
+    # Test search endpoint
+    try:
+        r = req.get(
+            "https://api.twitterapi.io/twitter/tweet/advanced_search",
+            headers={"X-API-Key": key},
+            params={"query": "iran military", "queryType": "Latest"},
+            timeout=15,
+        )
+        results["search"] = {
+            "status_code": r.status_code,
+            "tweet_count": len(r.json().get("tweets", [])) if r.status_code == 200 else 0,
+            "raw_preview": r.text[:400],
+        }
+    except Exception as e:
+        results["search"] = {"error": str(e)}
+
+    # Test user info endpoint
+    try:
+        r2 = req.get(
+            "https://api.twitterapi.io/twitter/user/info",
+            headers={"X-API-Key": key},
+            params={"userName": "CENTCOM"},
+            timeout=10,
+        )
+        results["user_info"] = {
+            "status_code": r2.status_code,
+            "raw_preview": r2.text[:400],
+        }
+    except Exception as e:
+        results["user_info"] = {"error": str(e)}
+
+    return {"configured": True, "key_preview": key[:8] + "...", "results": results}
+
+
 @app.post("/api/command/beacon")
 def run_beacon(background_tasks: BackgroundTasks):
     """Trigger News/Beacon scan."""
