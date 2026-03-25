@@ -86,8 +86,78 @@ def init_db():
             evaluated_at TEXT
         )
     """)
+    # Order book snapshots — one row per snapshot, stores full depth as JSON
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS orderbook_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            unix_ts REAL NOT NULL,
+            yes_price REAL,
+            best_bid REAL,
+            best_ask REAL,
+            spread REAL,
+            imbalance REAL,
+            total_bid_notional REAL,
+            total_ask_notional REAL,
+            bids_json TEXT,
+            asks_json TEXT
+        )
+    """)
     conn.commit()
     conn.close()
+
+
+def store_orderbook_snapshot(depth: dict, yes_price: float = None):
+    """Store a full order book snapshot."""
+    import json as _json
+    conn = sqlite3.connect(DB_PATH)
+    now = datetime.now(timezone.utc)
+    conn.execute("""
+        INSERT INTO orderbook_snapshots
+        (timestamp, unix_ts, yes_price, best_bid, best_ask, spread, imbalance,
+         total_bid_notional, total_ask_notional, bids_json, asks_json)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        now.isoformat(),
+        now.timestamp(),
+        yes_price,
+        depth.get("best_bid"),
+        depth.get("best_ask"),
+        depth.get("spread"),
+        depth.get("imbalance"),
+        depth.get("total_bid_notional"),
+        depth.get("total_ask_notional"),
+        _json.dumps(depth.get("bids", [])),
+        _json.dumps(depth.get("asks", [])),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_orderbook_snapshots(hours: int = 24, limit: int = 288) -> list:
+    """Return recent OB snapshots, newest first."""
+    import json as _json
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).timestamp()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT * FROM orderbook_snapshots
+        WHERE unix_ts > ?
+        ORDER BY unix_ts ASC
+        LIMIT ?
+    """, (since, limit)).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["bids"] = _json.loads(d.pop("bids_json", "[]"))
+            d["asks"] = _json.loads(d.pop("asks_json", "[]"))
+        except Exception:
+            d["bids"] = []
+            d["asks"] = []
+        result.append(d)
+    return result
 
 
 def store_signal(sig: Signal) -> bool:

@@ -18,7 +18,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 import api as polyapi
 import analyzer as analyzermod
 import tracker
-from intelligence.signals import init_db, get_recent_signals, get_all_signals, get_command_state
+from intelligence.signals import (
+    init_db, get_recent_signals, get_all_signals, get_command_state,
+    store_orderbook_snapshot, get_orderbook_snapshots
+)
 from intelligence.pulse import run_pulse_cycle
 from intelligence.beacon import run_beacon_cycle
 from intelligence.command import run_command_cycle, generate_market_signal, generate_orderflow_signal
@@ -47,15 +50,19 @@ def _intel_loop():
     time.sleep(5)  # let server fully start first
     while True:
         try:
-            # Market + orderflow signals every 2 minutes
+            # Market + orderflow signals + OB snapshot every 2 minutes
             market = polyapi.find_iran_boots_market()
             if market:
                 ms = generate_market_signal(market)
                 if ms:
                     store_signal(ms)
-                ofs = generate_orderflow_signal(market)
-                if ofs:
-                    store_signal(ofs)
+                if market.clob_token_ids:
+                    depth = polyapi.get_orderbook_depth(market.clob_token_ids[0])
+                    if depth:
+                        store_orderbook_snapshot(depth, yes_price=market.yes_price)
+                        ofs = generate_orderflow_signal(market)
+                        if ofs:
+                            store_signal(ofs)
 
             # News (Beacon) every 10 minutes
             if int(time.time()) % 600 < 120:
@@ -246,6 +253,49 @@ def run_beacon(background_tasks: BackgroundTasks):
     """Trigger News/Beacon scan."""
     background_tasks.add_task(run_beacon_cycle)
     return {"triggered": True}
+
+
+@app.get("/api/orderbook/history")
+def get_orderbook_history(hours: int = 24, range: float = 0.10):
+    """
+    Return OB snapshots with bid/ask depth computed at the given ±range.
+    Each snapshot includes: timestamp, yes_price, bid_depth, ask_depth,
+    imbalance, spread — filtered to within ±range of the mid at that snapshot.
+    Also returns current live depth for the range selector.
+    """
+    snapshots = get_orderbook_snapshots(hours=hours, limit=500)
+    result = []
+    for snap in snapshots:
+        mid = ((snap.get("best_bid") or 0.5) + (snap.get("best_ask") or 0.5)) / 2
+        low = max(0.01, mid - range)
+        high = min(0.99, mid + range)
+
+        bid_depth = sum(
+            b["size"] * b["price"]
+            for b in snap.get("bids", [])
+            if low <= b.get("price", 0) <= high
+        )
+        ask_depth = sum(
+            a["size"] * a["price"]
+            for a in snap.get("asks", [])
+            if low <= a.get("price", 0) <= high
+        )
+        total = bid_depth + ask_depth
+
+        result.append({
+            "timestamp": snap["timestamp"],
+            "unix_ts": snap["unix_ts"],
+            "yes_price": snap.get("yes_price"),
+            "best_bid": snap.get("best_bid"),
+            "best_ask": snap.get("best_ask"),
+            "spread": snap.get("spread"),
+            "bid_depth": round(bid_depth, 2),
+            "ask_depth": round(ask_depth, 2),
+            "total_depth": round(total, 2),
+            "imbalance": round((bid_depth - ask_depth) / total, 4) if total else 0,
+        })
+
+    return {"snapshots": result, "count": len(result), "range": range}
 
 
 @app.get("/api/command/status")

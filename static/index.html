@@ -170,26 +170,102 @@
     <!-- Order Book -->
     <div class="card">
       <h2>Order Book Depth</h2>
+
+      <!-- Range selector -->
+      <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Price Window ± cents from mid</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="number" id="rangeInput" value="0.10" min="0.01" max="0.30" step="0.01"
+              style="width:64px;background:var(--surface);border:1px solid var(--border);color:var(--text);
+                     border-radius:4px;padding:3px 7px;font-size:13px;font-family:monospace;text-align:center"
+              oninput="onRangeChange(this.value)">
+            <span style="font-size:12px;color:var(--muted)">= ±<span id="rangeCents">10.0</span>¢</span>
+          </div>
+        </div>
+        <input type="range" id="rangeSlider" min="1" max="30" value="10" step="1"
+          style="width:100%;accent-color:var(--blue);cursor:pointer"
+          oninput="onSliderChange(this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:2px">
+          <span>±1¢</span><span>±5¢</span><span>±10¢</span><span>±20¢</span><span>±30¢</span>
+        </div>
+        <!-- Big bid vs ask comparison at selected range -->
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;margin-top:12px;text-align:center">
+          <div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:10px">
+            <div style="font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Bid Side</div>
+            <div style="font-size:22px;font-weight:700;color:var(--green)" id="rangeBidDepth">—</div>
+            <div style="font-size:10px;color:var(--muted)" id="rangeBidPct">—</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+            <div style="font-size:11px;color:var(--muted)">vs</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text)" id="rangeImbalLabel">—</div>
+          </div>
+          <div style="background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.2);border-radius:6px;padding:10px">
+            <div style="font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Ask Side</div>
+            <div style="font-size:22px;font-weight:700;color:var(--red)" id="rangeAskDepth">—</div>
+            <div style="font-size:10px;color:var(--muted)" id="rangeAskPct">—</div>
+          </div>
+        </div>
+      </div>
+
       <div class="ob-summary">
-        <span>Bid: <strong class="green" id="obBid">—</strong></span>
-        <span>Ask: <strong class="red" id="obAsk">—</strong></span>
+        <span>Best Bid: <strong class="green" id="obBid">—</strong></span>
+        <span>Best Ask: <strong class="red" id="obAsk">—</strong></span>
         <span>Spread: <strong id="obSpread">—</strong></span>
       </div>
       <div class="imbalance-wrap">
         <div class="imbalance-label">
-          <span class="green">Bids <span id="obBidTotal">$0</span></span>
-          <span class="red">Asks <span id="obAskTotal">$0</span></span>
+          <span class="green">Total Bids <span id="obBidTotal">$0</span></span>
+          <span class="red">Total Asks <span id="obAskTotal">$0</span></span>
         </div>
         <div class="imbalance-track">
           <div class="imbalance-bid" id="imbalanceBid" style="width:50%"></div>
           <div class="imbalance-ask" id="imbalanceAsk" style="width:50%"></div>
         </div>
       </div>
-      <div style="max-height:260px;overflow-y:auto">
+      <div style="max-height:220px;overflow-y:auto">
         <table class="ob-table">
           <thead><tr><th>Price</th><th>Bid $</th><th>Ask $</th><th style="width:80px">Depth</th></tr></thead>
           <tbody id="obBody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Order Book History Chart (full width) -->
+    <div class="card full-width">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0">Order Book Depth Over Time</h2>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:11px;color:var(--muted)">Window: ±<span id="histRangeCents">10.0</span>¢</span>
+          <select id="histHours" onchange="loadOBHistory()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 8px;border-radius:4px;font-size:12px;font-family:monospace">
+            <option value="6">6h</option>
+            <option value="12">12h</option>
+            <option value="24" selected>24h</option>
+            <option value="48">48h</option>
+            <option value="72">72h</option>
+          </select>
+        </div>
+      </div>
+      <div style="position:relative;height:220px">
+        <canvas id="obHistoryChart"></canvas>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px">
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Avg Bid Depth</div>
+          <div style="font-size:16px;font-weight:700;color:var(--green)" id="histAvgBid">—</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Avg Ask Depth</div>
+          <div style="font-size:16px;font-weight:700;color:var(--red)" id="histAvgAsk">—</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Max Imbalance</div>
+          <div style="font-size:16px;font-weight:700" id="histMaxImbal">—</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Snapshots</div>
+          <div style="font-size:16px;font-weight:700;color:var(--muted)" id="histCount">—</div>
+        </div>
       </div>
     </div>
 
@@ -238,6 +314,9 @@
 
 <script>
 let priceChartInstance = null;
+let obHistoryChartInstance = null;
+let currentRange = 0.10;   // ± cents window, default 10¢
+let latestOBDepth = null;  // most recent full depth from API
 
 async function api(path, method='GET') {
   const r = await fetch(path, { method });
@@ -311,9 +390,196 @@ async function loadAnalysis() {
   } catch(e) { console.error('analysis', e); }
 }
 
+// ── Range selector controls ───────────────────────────────────────────────────
+
+function onRangeChange(val) {
+  const v = Math.max(0.01, Math.min(0.30, parseFloat(val) || 0.10));
+  currentRange = v;
+  document.getElementById('rangeSlider').value = Math.round(v * 100);
+  document.getElementById('rangeCents').textContent = (v * 100).toFixed(1);
+  document.getElementById('histRangeCents').textContent = (v * 100).toFixed(1);
+  if (latestOBDepth) renderRangeComparison(latestOBDepth, v);
+  loadOBHistory();
+}
+
+function onSliderChange(val) {
+  const v = parseFloat(val) / 100;
+  currentRange = v;
+  document.getElementById('rangeInput').value = v.toFixed(2);
+  document.getElementById('rangeCents').textContent = (v * 100).toFixed(1);
+  document.getElementById('histRangeCents').textContent = (v * 100).toFixed(1);
+  if (latestOBDepth) renderRangeComparison(latestOBDepth, v);
+  loadOBHistory();
+}
+
+function renderRangeComparison(depth, range) {
+  const mid = ((depth.best_bid || 0.5) + (depth.best_ask || 0.5)) / 2;
+  const low = Math.max(0.01, mid - range);
+  const high = Math.min(0.99, mid + range);
+
+  const bidDepth = (depth.bids || [])
+    .filter(b => b.price >= low && b.price <= high)
+    .reduce((s, b) => s + (b.size * b.price), 0);
+  const askDepth = (depth.asks || [])
+    .filter(a => a.price >= low && a.price <= high)
+    .reduce((s, a) => s + (a.size * a.price), 0);
+  const total = bidDepth + askDepth || 1;
+  const bidPct = bidDepth / total * 100;
+  const askPct = askDepth / total * 100;
+  const imbal = (bidDepth - askDepth) / total;
+
+  document.getElementById('rangeBidDepth').textContent = fmtMoney(bidDepth);
+  document.getElementById('rangeAskDepth').textContent = fmtMoney(askDepth);
+  document.getElementById('rangeBidPct').textContent = bidPct.toFixed(1) + '% of window';
+  document.getElementById('rangeAskPct').textContent = askPct.toFixed(1) + '% of window';
+
+  const imbalEl = document.getElementById('rangeImbalLabel');
+  if (imbal > 0.1) {
+    imbalEl.textContent = '▲ Buyers winning';
+    imbalEl.style.color = 'var(--green)';
+  } else if (imbal < -0.1) {
+    imbalEl.textContent = '▼ Sellers winning';
+    imbalEl.style.color = 'var(--red)';
+  } else {
+    imbalEl.textContent = '↔ Balanced';
+    imbalEl.style.color = 'var(--muted)';
+  }
+}
+
+// ── OB History Chart ──────────────────────────────────────────────────────────
+
+async function loadOBHistory() {
+  try {
+    const hours = document.getElementById('histHours').value || 24;
+    const d = await api(`/api/orderbook/history?hours=${hours}&range=${currentRange}`);
+    const snaps = d.snapshots || [];
+
+    document.getElementById('histCount').textContent = snaps.length;
+
+    if (!snaps.length) {
+      document.getElementById('histAvgBid').textContent = '—';
+      document.getElementById('histAvgAsk').textContent = '—';
+      document.getElementById('histMaxImbal').textContent = '—';
+      return;
+    }
+
+    // Summary stats
+    const avgBid = snaps.reduce((s, x) => s + x.bid_depth, 0) / snaps.length;
+    const avgAsk = snaps.reduce((s, x) => s + x.ask_depth, 0) / snaps.length;
+    const maxImbal = snaps.reduce((max, x) => Math.abs(x.imbalance) > Math.abs(max) ? x.imbalance : max, 0);
+
+    document.getElementById('histAvgBid').textContent = fmtMoney(avgBid);
+    document.getElementById('histAvgAsk').textContent = fmtMoney(avgAsk);
+    const imbalEl = document.getElementById('histMaxImbal');
+    imbalEl.textContent = (maxImbal > 0 ? '+' : '') + (maxImbal * 100).toFixed(1) + '%';
+    imbalEl.style.color = maxImbal > 0.05 ? 'var(--green)' : maxImbal < -0.05 ? 'var(--red)' : 'var(--muted)';
+
+    // Chart
+    const labels = snaps.map(s => {
+      const t = new Date(s.timestamp);
+      return t.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+    });
+    const bidData  = snaps.map(s => s.bid_depth);
+    const askData  = snaps.map(s => s.ask_depth);
+    const priceData = snaps.map(s => (s.yes_price || 0) * 100);
+
+    const ctx = document.getElementById('obHistoryChart').getContext('2d');
+    if (obHistoryChartInstance) obHistoryChartInstance.destroy();
+
+    obHistoryChartInstance = new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'line',
+            label: 'Bid Depth $',
+            data: bidData,
+            borderColor: '#22c55e',
+            backgroundColor: 'rgba(34,197,94,0.08)',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'yDepth',
+          },
+          {
+            type: 'line',
+            label: 'Ask Depth $',
+            data: askData,
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239,68,68,0.08)',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'yDepth',
+          },
+          {
+            type: 'line',
+            label: 'YES Price %',
+            data: priceData,
+            borderColor: '#3b82f6',
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            borderDash: [4, 3],
+            pointRadius: 0,
+            tension: 0.3,
+            yAxisID: 'yPrice',
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12, padding: 12 }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                if (ctx.dataset.yAxisID === 'yPrice') return `YES: ${ctx.parsed.y.toFixed(1)}%`;
+                return `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString('en', {maximumFractionDigits:0})}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#8b949e', maxTicksLimit: 10, font: { size: 10 } },
+            grid: { color: '#21262d' }
+          },
+          yDepth: {
+            position: 'left',
+            ticks: {
+              color: '#8b949e', font: { size: 10 },
+              callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0)+'K' : v)
+            },
+            grid: { color: '#21262d' }
+          },
+          yPrice: {
+            position: 'right',
+            ticks: { color: '#3b82f6', font: { size: 10 }, callback: v => v + '%' },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  } catch(e) { console.error('ob history', e); }
+}
+
+// ── Order Book ────────────────────────────────────────────────────────────────
+
 async function loadOrderBook() {
   try {
-    const d = await api('/api/orderbook/iran?range=0.12');
+    const d = await api(`/api/orderbook/iran?range=${Math.max(currentRange + 0.05, 0.15)}`);
+
+    // Store for range comparison
+    latestOBDepth = d;
+    renderRangeComparison(d, currentRange);
 
     document.getElementById('obBid').textContent = d.best_bid ? fmt(d.best_bid) : '—';
     document.getElementById('obAsk').textContent = d.best_ask ? fmt(d.best_ask) : '—';
@@ -526,6 +792,7 @@ async function refreshAll() {
     loadPriceHistory(),
     loadPredictions(),
     loadPerformance(),
+    loadOBHistory(),
   ]);
   document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
