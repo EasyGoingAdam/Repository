@@ -259,6 +259,30 @@
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+    /* ── DESK NAV ── */
+    .desk-nav {
+      background: #060a0f; border-bottom: 1px solid var(--border);
+      padding: 0 24px; display: flex; gap: 2px; align-items: stretch;
+    }
+    .desk-nav-item {
+      padding: 9px 15px; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); text-decoration: none;
+      border-bottom: 3px solid transparent; transition: color 0.2s;
+      white-space: nowrap;
+    }
+    .desk-nav-item:hover { color: var(--text); }
+    .desk-nav-item.active-cmd  { color: #ef4444; border-bottom-color: #ef4444; }
+    .desk-nav-item.active-pulse   { color: #a855f7; border-bottom-color: #a855f7; }
+    .desk-nav-item.active-beacon  { color: #3b82f6; border-bottom-color: #3b82f6; }
+    .desk-nav-item.active-market  { color: #22c55e; border-bottom-color: #22c55e; }
+    .desk-nav-item.active-of      { color: #f97316; border-bottom-color: #f97316; }
+    .nav-spacer { flex: 1; }
+
+    /* clickable workers */
+    .worker-station { cursor: pointer; }
+    .worker-station:hover .app-label { text-decoration: underline; }
+
     /* Links */
     .dashboard-link {
       font-size: 11px; color: var(--muted); text-decoration: none;
@@ -278,6 +302,17 @@
     <a class="dashboard-link" href="/">← Market Dashboard</a>
   </div>
 </header>
+
+<!-- Desk Nav -->
+<nav class="desk-nav">
+  <a href="/command" class="desk-nav-item active-cmd">🎖️ Command</a>
+  <a href="/pulse"   class="desk-nav-item">🕵️ Pulse</a>
+  <a href="/beacon"  class="desk-nav-item">📡 Beacon</a>
+  <a href="/market-desk" class="desk-nav-item">📊 Market</a>
+  <a href="/orderflow"   class="desk-nav-item">📈 OrderFlow</a>
+  <div class="nav-spacer"></div>
+  <a href="/" class="desk-nav-item" style="opacity:.55">← Dashboard</a>
+</nav>
 
 <!-- Odds Bar -->
 <div class="odds-bar">
@@ -320,7 +355,7 @@
     </div>
 
     <!-- Worker stations -->
-    <div class="worker-station" id="station-pulse">
+    <div class="worker-station" id="station-pulse" onclick="location.href='/pulse'" title="Open Pulse Desk">
       <div style="position:relative">
         <div class="worker" id="worker-pulse">🕵️</div>
         <div class="status-dot" id="dot-pulse"></div>
@@ -333,7 +368,7 @@
       </div>
     </div>
 
-    <div class="worker-station" id="station-beacon">
+    <div class="worker-station" id="station-beacon" onclick="location.href='/beacon'" title="Open Beacon Desk">
       <div style="position:relative">
         <div class="worker" id="worker-beacon">📡</div>
         <div class="status-dot" id="dot-beacon"></div>
@@ -346,7 +381,7 @@
       </div>
     </div>
 
-    <div class="worker-station" id="station-market">
+    <div class="worker-station" id="station-market" onclick="location.href='/market-desk'" title="Open Market Desk">
       <div style="position:relative">
         <div class="worker" id="worker-market">📊</div>
         <div class="status-dot" id="dot-market"></div>
@@ -359,7 +394,7 @@
       </div>
     </div>
 
-    <div class="worker-station" id="station-orderflow">
+    <div class="worker-station" id="station-orderflow" onclick="location.href='/orderflow'" title="Open OrderFlow Desk">
       <div style="position:relative">
         <div class="worker" id="worker-orderflow">📈</div>
         <div class="status-dot" id="dot-orderflow"></div>

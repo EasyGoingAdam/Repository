@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pulse — First Strike</title>
+  <style>
+    :root {
+      --bg:#060a0f; --surface:#0d1520; --border:#1a2535; --text:#e2e8f0;
+      --muted:#64748b; --green:#22c55e; --red:#ef4444; --yellow:#eab308;
+      --blue:#3b82f6; --purple:#a855f7; --orange:#f97316;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace}
+    header{background:linear-gradient(90deg,#0a0f1a,#0d1520,#0a0f1a);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+    .logo{font-size:20px;font-weight:900;letter-spacing:.12em;color:#fff}
+    .logo span{color:#ef4444}
+    .desk-badge{padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.3)}
+    nav.desk-nav{background:#060a0f;border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:2px;align-items:stretch}
+    .desk-nav-item{padding:9px 15px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-decoration:none;border-bottom:3px solid transparent;transition:color .2s;white-space:nowrap}
+    .desk-nav-item:hover{color:var(--text)}
+    .active{color:#a855f7;border-bottom-color:#a855f7}
+    .nav-spacer{flex:1}
+    .container{max-width:1100px;margin:0 auto;padding:24px}
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+    .stat{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+    .stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+    .stat .val{font-size:24px;font-weight:700}
+    .stat .sub{font-size:11px;color:var(--muted);margin-top:3px}
+    .summary-card{background:var(--surface);border:1px solid rgba(168,85,247,.35);border-radius:8px;padding:18px 20px;margin-bottom:20px}
+    .summary-card h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#a855f7;margin-bottom:10px}
+    .summary-text{font-size:13px;line-height:1.9;color:var(--text)}
+    .controls{display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+    .ctrl-lbl{font-size:11px;color:var(--muted)}
+    select{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:4px;font-size:12px;font-family:inherit}
+    .refresh-btn{background:rgba(168,85,247,.15);border:1px solid rgba(168,85,247,.3);color:#a855f7;padding:5px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;margin-left:auto}
+    .refresh-btn:hover{background:rgba(168,85,247,.25)}
+    .tweet-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px;transition:border-color .2s}
+    .tweet-card:hover{border-color:rgba(168,85,247,.5)}
+    .tweet-card.bullish{border-left:3px solid var(--green)}
+    .tweet-card.bearish{border-left:3px solid var(--red)}
+    .tweet-card.neutral{border-left:3px solid var(--muted)}
+    .tweet-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+    .author{font-size:12px;font-weight:700;color:#a855f7}
+    .cls-tag{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:600}
+    .cls-official{background:rgba(34,197,94,.12);color:var(--green)}
+    .cls-semi{background:rgba(59,130,246,.12);color:var(--blue)}
+    .cls-rumor{background:rgba(239,68,68,.12);color:var(--red)}
+    .cls-other{background:rgba(100,116,139,.12);color:var(--muted)}
+    .pill{padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase}
+    .pill-bullish{background:rgba(34,197,94,.15);color:var(--green)}
+    .pill-bearish{background:rgba(239,68,68,.15);color:var(--red)}
+    .pill-neutral{background:rgba(100,116,139,.15);color:var(--muted)}
+    .tweet-text{font-size:13px;line-height:1.65;color:var(--text);margin-bottom:8px;word-break:break-word}
+    .tweet-footer{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--muted);flex-wrap:wrap}
+    .tweet-link{color:#a855f7;text-decoration:none}
+    .tweet-link:hover{text-decoration:underline}
+    .score-c{background:rgba(59,130,246,.1);color:var(--blue);padding:1px 6px;border-radius:3px}
+    .score-i{background:rgba(249,115,22,.1);color:var(--orange);padding:1px 6px;border-radius:3px}
+    .impact-pos{color:var(--green)}
+    .impact-neg{color:var(--red)}
+    .empty{color:var(--muted);font-size:13px;text-align:center;padding:48px}
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-track{background:var(--bg)}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo"><span>FIRST</span> STRIKE</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="desk-badge">🕵️ Pulse — X/Twitter Intel</span>
+    <span id="lastScan" style="font-size:10px;color:var(--muted)">Loading...</span>
+  </div>
+</header>
+
+<nav class="desk-nav">
+  <a href="/command" class="desk-nav-item">🎖️ Command</a>
+  <a href="/pulse"   class="desk-nav-item active">🕵️ Pulse</a>
+  <a href="/beacon"  class="desk-nav-item">📡 Beacon</a>
+  <a href="/market-desk" class="desk-nav-item">📊 Market</a>
+  <a href="/orderflow"   class="desk-nav-item">📈 OrderFlow</a>
+  <div class="nav-spacer"></div>
+  <a href="/" class="desk-nav-item" style="opacity:.55">← Dashboard</a>
+</nav>
+
+<div class="container">
+
+  <div class="stats-row">
+    <div class="stat"><div class="lbl">Signals</div><div class="val" id="sTotal">—</div><div class="sub">collected</div></div>
+    <div class="stat"><div class="lbl">Escalatory</div><div class="val" style="color:var(--green)" id="sBull">—</div><div class="sub">bullish YES</div></div>
+    <div class="stat"><div class="lbl">De-Escalatory</div><div class="val" style="color:var(--red)" id="sBear">—</div><div class="sub">bearish YES</div></div>
+    <div class="stat"><div class="lbl">Neutral</div><div class="val" style="color:var(--muted)" id="sNeut">—</div><div class="sub">no signal</div></div>
+    <div class="stat"><div class="lbl">Official Sources</div><div class="val" style="color:var(--green)" id="sOfficial">—</div><div class="sub">gov / major media</div></div>
+    <div class="stat"><div class="lbl">Avg Confidence</div><div class="val" style="color:#a855f7" id="sConf">—</div><div class="sub">0–100</div></div>
+    <div class="stat"><div class="lbl">Top Account</div><div class="val" style="font-size:14px;color:#a855f7;padding-top:4px" id="sTop">—</div><div class="sub">most signals</div></div>
+  </div>
+
+  <div class="summary-card">
+    <h2>🤖 Bot Reading — What Pulse Is Seeing Right Now</h2>
+    <div class="summary-text" id="botSummary">Analyzing...</div>
+  </div>
+
+  <div class="controls">
+    <span class="ctrl-lbl">Window:</span>
+    <select id="hoursSelect" onchange="load()">
+      <option value="12">12h</option>
+      <option value="24">24h</option>
+      <option value="48" selected>48h</option>
+      <option value="72">72h</option>
+    </select>
+    <span class="ctrl-lbl">Direction:</span>
+    <select id="dirFilter" onchange="renderFeed()">
+      <option value="all">All</option>
+      <option value="bullish">Escalatory (Bullish)</option>
+      <option value="bearish">De-Escalatory (Bearish)</option>
+      <option value="neutral">Neutral</option>
+    </select>
+    <span id="feedCount" style="font-size:11px;color:var(--muted)"></span>
+    <button class="refresh-btn" onclick="load()">↻ Refresh</button>
+  </div>
+
+  <div id="tweetFeed"></div>
+</div>
+
+<script>
+let signals = [];
+
+async function load() {
+  const hours = document.getElementById('hoursSelect').value;
+  try {
+    const r = await fetch(`/api/command/signals?source=pulse&hours=${hours}&limit=200`);
+    const d = await r.json();
+    signals = d.signals || [];
+    renderStats();
+    renderSummary();
+    renderFeed();
+    document.getElementById('lastScan').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch(e) { console.error(e); }
+}
+
+function author(reasoning) {
+  if (!reasoning) return null;
+  const m = reasoning.match(/@(\w+)/);
+  return m ? '@' + m[1] : null;
+}
+
+function classification(reasoning) {
+  if (!reasoning) return 'unknown';
+  const m = reasoning.match(/\[([^\]]+)\]/);
+  return m ? m[1] : 'unknown';
+}
+
+function renderStats() {
+  const bull = signals.filter(s => s.signal_direction === 'bullish');
+  const bear = signals.filter(s => s.signal_direction === 'bearish');
+  const neut = signals.filter(s => s.signal_direction === 'neutral');
+  const official = signals.filter(s => s.reasoning && s.reasoning.includes('[official]'));
+  const avgConf = signals.length ? Math.round(signals.reduce((a,s) => a+s.confidence_score,0)/signals.length) : 0;
+
+  const authors = signals.map(s => author(s.reasoning)).filter(Boolean);
+  const counts = {}; authors.forEach(a => counts[a]=(counts[a]||0)+1);
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+
+  document.getElementById('sTotal').textContent = signals.length;
+  document.getElementById('sBull').textContent  = bull.length;
+  document.getElementById('sBear').textContent  = bear.length;
+  document.getElementById('sNeut').textContent  = neut.length;
+  document.getElementById('sOfficial').textContent = official.length;
+  document.getElementById('sConf').textContent  = avgConf || '—';
+  document.getElementById('sTop').textContent   = top ? top[0] : '—';
+}
+
+function renderSummary() {
+  const el = document.getElementById('botSummary');
+  if (!signals.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No signals collected yet in this window. If the TWITTER_API_KEY is configured, Pulse scans every 5 minutes. The desk is standing by.</span>';
+    return;
+  }
+  const bull = signals.filter(s => s.signal_direction === 'bullish');
+  const bear = signals.filter(s => s.signal_direction === 'bearish');
+  const neut = signals.filter(s => s.signal_direction === 'neutral');
+  const official = signals.filter(s => s.reasoning && s.reasoning.includes('[official]'));
+  const semiConf = signals.filter(s => s.reasoning && s.reasoning.includes('[semi-confirmed]'));
+  const rumors   = signals.filter(s => s.reasoning && (s.reasoning.includes('[rumor') || s.reasoning.includes('[unknown]')));
+  const avgConf = Math.round(signals.reduce((a,s)=>a+s.confidence_score,0)/signals.length);
+  const avgImp  = Math.round(signals.reduce((a,s)=>a+s.importance_score,0)/signals.length);
+
+  const authors = signals.map(s => author(s.reasoning)).filter(Boolean);
+  const counts = {}; authors.forEach(a => counts[a]=(counts[a]||0)+1);
+  const topAuthors = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>e[0]);
+
+  const topSig = [...signals].sort((a,b)=>b.importance_score*b.confidence_score - a.importance_score*a.confidence_score)[0];
+  const hours = document.getElementById('hoursSelect').value;
+
+  let h = `Over the past <strong>${hours} hours</strong>, Pulse captured <strong>${signals.length} X/Twitter signal${signals.length!==1?'s':''}</strong>. `;
+  h += `Breakdown: <strong style="color:var(--green)">${bull.length} escalatory</strong>, <strong style="color:var(--red)">${bear.length} de-escalatory</strong>, <span style="color:var(--muted)">${neut.length} neutral</span>. `;
+
+  if (official.length) h += `<strong style="color:var(--green)">${official.length} official-source signal${official.length!==1?'s':''}</strong> (government/major media — highest credibility weight). `;
+  if (semiConf.length) h += `${semiConf.length} semi-confirmed (established analysts). `;
+  if (rumors.length)   h += `${rumors.length} rumor/unverified. `;
+
+  if (topAuthors.length) h += `Active accounts this window: <strong style="color:#a855f7">${topAuthors.join(', ')}</strong>. `;
+  h += `Avg confidence <strong>${avgConf}/100</strong>, avg importance <strong>${avgImp}/100</strong>. `;
+
+  if (topSig) {
+    const cls = classification(topSig.reasoning);
+    h += `<br><br>📌 <strong>Highest-weight signal</strong> [${esc(cls)}]: "<em>${esc((topSig.raw_text||topSig.headline||'').slice(0,120))}</em>"`;
+    const a = author(topSig.reasoning);
+    if (a) h += ` — from ${esc(a)}`;
+    h += ` (I:${topSig.importance_score} C:${topSig.confidence_score})`;
+  }
+
+  h += `<br><br>`;
+  if (bull.length > bear.length * 1.8) {
+    h += `🔴 <strong style="color:var(--red)">Dominant signal: ESCALATORY.</strong> Twitter chatter is weighted toward military action — suggests elevated YES probability.`;
+  } else if (bear.length > bull.length * 1.8) {
+    h += `🟢 <strong style="color:var(--green)">Dominant signal: DE-ESCALATORY.</strong> Diplomatic/denial language dominates — suggests suppressed YES probability.`;
+  } else if (bull.length > 0 || bear.length > 0) {
+    h += `⚪ <strong>Signal is mixed.</strong> Both escalatory and de-escalatory content present — no strong directional consensus.`;
+  } else {
+    h += `⚪ All captured signals are neutral. Monitoring continues.`;
+  }
+
+  el.innerHTML = h;
+}
+
+function renderFeed() {
+  const dir = document.getElementById('dirFilter').value;
+  const filtered = dir === 'all' ? signals : signals.filter(s => s.signal_direction === dir);
+  document.getElementById('feedCount').textContent = filtered.length + ' signals shown';
+  if (!filtered.length) {
+    document.getElementById('tweetFeed').innerHTML = '<div class="empty">No signals match this filter. Try widening the time window.</div>';
+    return;
+  }
+  const html = filtered.map(s => {
+    const auth = author(s.reasoning) || 'unknown';
+    const cls  = classification(s.reasoning);
+    const clsCls = cls.includes('official') ? 'cls-official' : cls.includes('semi') ? 'cls-semi' : cls.includes('rumor') ? 'cls-rumor' : 'cls-other';
+    const ts = new Date(s.timestamp).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const imp = s.probability_impact_estimate;
+    const impHtml = imp ? `<span class="${imp>0?'impact-pos':'impact-neg'}">${imp>0?'+':''}${imp.toFixed(1)}pp</span>` : '';
+    const linkHtml = s.link ? `<a class="tweet-link" href="${esc(s.link)}" target="_blank" rel="noopener">↗ view tweet</a>` : '';
+    const text = esc((s.raw_text || s.headline || '').slice(0, 400));
+    return `<div class="tweet-card ${s.signal_direction}">
+      <div class="tweet-hdr">
+        <span class="author">${esc(auth)}</span>
+        <span class="cls-tag ${clsCls}">${esc(cls)}</span>
+        <span class="pill pill-${s.signal_direction}">${s.signal_direction}</span>
+      </div>
+      <div class="tweet-text">${text}</div>
+      <div class="tweet-footer">
+        <span>${ts}</span>
+        ${linkHtml}
+        ${impHtml}
+        <span style="margin-left:auto;display:flex;gap:4px">
+          <span class="score-c">C:${s.confidence_score}</span>
+          <span class="score-i">I:${s.importance_score}</span>
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('tweetFeed').innerHTML = html;
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

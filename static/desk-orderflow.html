@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OrderFlow — First Strike</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root{--bg:#060a0f;--surface:#0d1520;--border:#1a2535;--text:#e2e8f0;--muted:#64748b;--green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;--purple:#a855f7;--orange:#f97316}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace}
+    header{background:linear-gradient(90deg,#0a0f1a,#0d1520,#0a0f1a);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+    .logo{font-size:20px;font-weight:900;letter-spacing:.12em;color:#fff}.logo span{color:#ef4444}
+    .desk-badge{padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:rgba(249,115,22,.15);color:#f97316;border:1px solid rgba(249,115,22,.3)}
+    nav.desk-nav{background:#060a0f;border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:2px;align-items:stretch}
+    .desk-nav-item{padding:9px 15px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-decoration:none;border-bottom:3px solid transparent;transition:color .2s;white-space:nowrap}
+    .desk-nav-item:hover{color:var(--text)}
+    .active{color:#f97316;border-bottom-color:#f97316}
+    .nav-spacer{flex:1}
+    .container{max-width:1100px;margin:0 auto;padding:24px}
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:20px}
+    .stat{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+    .stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+    .stat .val{font-size:24px;font-weight:700}.stat .sub{font-size:11px;color:var(--muted);margin-top:3px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:16px}
+    .card h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f97316;margin-bottom:14px}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+    @media(max-width:800px){.two-col{grid-template-columns:1fr}}
+
+    /* Live OB snapshot */
+    .ob-live{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:16px}
+    .ob-side{text-align:center;padding:14px;border-radius:8px}
+    .ob-side-bid{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2)}
+    .ob-side-ask{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)}
+    .ob-side-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+    .ob-side-val{font-size:32px;font-weight:900}
+    .ob-side-sub{font-size:11px;color:var(--muted);margin-top:4px}
+    .ob-vs{text-align:center;font-size:11px;color:var(--muted)}
+    .ob-vs .verdict{font-size:13px;font-weight:700;margin-top:6px}
+    .imbal-track{height:10px;background:var(--border);border-radius:5px;overflow:hidden;display:flex;margin:8px 0}
+    .imbal-bid{background:var(--green);transition:width .5s}
+    .imbal-ask{background:var(--red);transition:width .5s}
+    .imbal-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
+
+    /* OB table */
+    .ob-table{width:100%;border-collapse:collapse;font-size:11px;font-family:monospace}
+    .ob-table th{color:var(--muted);font-weight:500;padding:4px 8px;text-align:right;border-bottom:1px solid var(--border)}
+    .ob-table th:first-child{text-align:left}
+    .ob-table td{padding:3px 8px;text-align:right}
+    .ob-table td:first-child{text-align:left}
+    .bid-row td{color:var(--green)}.ask-row td{color:var(--red)}
+    .mid-row td{color:var(--muted);font-style:italic;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)}
+    .bar-rel{position:relative}.bar-bg{position:absolute;top:1px;bottom:1px;border-radius:2px;opacity:.2}
+    .bar-bid{right:0;background:var(--green)}.bar-ask{left:0;background:var(--red)}
+    .bar-txt{position:relative;z-index:1}
+
+    /* Chart */
+    .chart-wrap{position:relative;height:200px}
+
+    /* Signal feed */
+    .sig-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px}
+    .sig-row:last-child{border:none}
+    .pill{padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;flex-shrink:0}
+    .pill-bullish{background:rgba(34,197,94,.15);color:var(--green)}
+    .pill-bearish{background:rgba(239,68,68,.15);color:var(--red)}
+    .pill-neutral{background:rgba(100,116,139,.15);color:var(--muted)}
+    .sig-body{flex:1}.sig-headline{color:var(--text);line-height:1.4;margin-bottom:3px}
+    .sig-reason{font-size:11px;color:var(--muted)}
+    .sig-meta{flex-shrink:0;text-align:right;color:var(--muted);font-size:10px}
+    .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    select{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:4px;font-size:12px;font-family:inherit}
+    .refresh-btn{background:rgba(249,115,22,.15);border:1px solid rgba(249,115,22,.3);color:#f97316;padding:5px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;margin-left:auto}
+    .empty{color:var(--muted);font-size:13px;text-align:center;padding:32px}
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo"><span>FIRST</span> STRIKE</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="desk-badge">📈 OrderFlow Desk</span>
+    <span id="lastScan" style="font-size:10px;color:var(--muted)">Loading...</span>
+  </div>
+</header>
+<nav class="desk-nav">
+  <a href="/command"     class="desk-nav-item">🎖️ Command</a>
+  <a href="/pulse"       class="desk-nav-item">🕵️ Pulse</a>
+  <a href="/beacon"      class="desk-nav-item">📡 Beacon</a>
+  <a href="/market-desk" class="desk-nav-item">📊 Market</a>
+  <a href="/orderflow"   class="desk-nav-item active">📈 OrderFlow</a>
+  <div class="nav-spacer"></div>
+  <a href="/" class="desk-nav-item" style="opacity:.55">← Dashboard</a>
+</nav>
+
+<div class="container">
+
+  <div class="stats-row">
+    <div class="stat"><div class="lbl">Best Bid</div><div class="val" style="color:var(--green)" id="sBid">—</div><div class="sub">top buy price</div></div>
+    <div class="stat"><div class="lbl">Best Ask</div><div class="val" style="color:var(--red)" id="sAsk">—</div><div class="sub">top sell price</div></div>
+    <div class="stat"><div class="lbl">Spread</div><div class="val" style="color:var(--yellow)" id="sSpread">—</div><div class="sub">bid-ask gap</div></div>
+    <div class="stat"><div class="lbl">Imbalance</div><div class="val" id="sImbal">—</div><div class="sub" id="sImbalLabel">—</div></div>
+    <div class="stat"><div class="lbl">Total Bids</div><div class="val" style="color:var(--green)" id="sBidTotal">—</div><div class="sub">notional</div></div>
+    <div class="stat"><div class="lbl">Total Asks</div><div class="val" style="color:var(--red)" id="sAskTotal">—</div><div class="sub">notional</div></div>
+    <div class="stat"><div class="lbl">OF Signals</div><div class="val" style="color:var(--orange)" id="sSigCount">—</div><div class="sub">last 48h</div></div>
+  </div>
+
+  <!-- Live snapshot -->
+  <div class="card">
+    <h2>⚡ Live Order Book Snapshot</h2>
+    <div class="ob-live">
+      <div class="ob-side ob-side-bid">
+        <div class="ob-side-lbl" style="color:var(--green)">Bid Side</div>
+        <div class="ob-side-val" style="color:var(--green)" id="liveBidDepth">—</div>
+        <div class="ob-side-sub" id="liveBidPct">—</div>
+      </div>
+      <div class="ob-vs">
+        <div style="font-size:11px;color:var(--muted)">vs</div>
+        <div class="verdict" id="liveVerdict">—</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px" id="liveSpreadLabel">—</div>
+      </div>
+      <div class="ob-side ob-side-ask">
+        <div class="ob-side-lbl" style="color:var(--red)">Ask Side</div>
+        <div class="ob-side-val" style="color:var(--red)" id="liveAskDepth">—</div>
+        <div class="ob-side-sub" id="liveAskPct">—</div>
+      </div>
+    </div>
+    <div class="imbal-labels"><span style="color:var(--green)">Bids</span><span style="color:var(--red)">Asks</span></div>
+    <div class="imbal-track">
+      <div class="imbal-bid" id="imbalBid" style="width:50%"></div>
+      <div class="imbal-ask" id="imbalAsk" style="width:50%"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+      <span id="imbalBidPct">—</span><span id="imbalAskPct">—</span>
+    </div>
+    <div style="max-height:240px;overflow-y:auto;margin-top:14px">
+      <table class="ob-table">
+        <thead><tr><th>Price</th><th>Bid $</th><th>Ask $</th><th style="width:80px">Depth</th></tr></thead>
+        <tbody id="obBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- OB history chart + signal feed -->
+  <div class="two-col">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h2 style="margin:0">📊 Depth Over Time</h2>
+        <select id="histHours" onchange="loadHistory()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 8px;border-radius:4px;font-size:11px;font-family:inherit">
+          <option value="6">6h</option><option value="12">12h</option>
+          <option value="24" selected>24h</option><option value="48">48h</option>
+        </select>
+      </div>
+      <div class="chart-wrap"><canvas id="obChart"></canvas></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;font-size:11px;text-align:center">
+        <div><span style="color:var(--muted)">Avg Bid</span><br><strong style="color:var(--green)" id="avgBid">—</strong></div>
+        <div><span style="color:var(--muted)">Avg Ask</span><br><strong style="color:var(--red)" id="avgAsk">—</strong></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h2 style="margin:0">📋 Signal History</h2>
+        <div class="controls">
+          <select id="sigHours" onchange="loadSignals()">
+            <option value="24">24h</option>
+            <option value="48" selected>48h</option>
+            <option value="72">72h</option>
+          </select>
+          <button class="refresh-btn" onclick="loadAll()">↻</button>
+        </div>
+      </div>
+      <div id="sigFeed" style="max-height:320px;overflow-y:auto">
+        <div class="empty">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let obChartInst = null;
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+function fmt(n,d=2){ return n!=null?(n*100).toFixed(d)+'¢':'—'; }
+function fmtMoney(n){
+  if(!n) return '$0';
+  if(n>=1e6) return '$'+(n/1e6).toFixed(2)+'M';
+  if(n>=1000) return '$'+(n/1000).toFixed(1)+'K';
+  return '$'+n.toFixed(0);
+}
+
+async function loadLiveOB() {
+  try {
+    const d = await api('/api/orderbook/iran?range=0.20');
+    const bidN = d.total_bid_notional||0, askN = d.total_ask_notional||0, tot = bidN+askN||1;
+    const bidPct = bidN/tot*100, askPct = askN/tot*100;
+    const imbal = d.imbalance||0;
+
+    document.getElementById('sBid').textContent      = fmt(d.best_bid);
+    document.getElementById('sAsk').textContent      = fmt(d.best_ask);
+    document.getElementById('sSpread').textContent   = d.spread ? (d.spread*100).toFixed(2)+'¢' : '—';
+    document.getElementById('sBidTotal').textContent = fmtMoney(bidN);
+    document.getElementById('sAskTotal').textContent = fmtMoney(askN);
+
+    const imbalEl = document.getElementById('sImbal');
+    imbalEl.textContent = (imbal>=0?'+':'')+imbal.toFixed(3);
+    imbalEl.style.color = imbal>0.1?'var(--green)':imbal<-0.1?'var(--red)':'var(--muted)';
+    document.getElementById('sImbalLabel').textContent = imbal>0.15?'buy pressure':imbal<-0.15?'sell pressure':'balanced';
+
+    document.getElementById('liveBidDepth').textContent = fmtMoney(bidN);
+    document.getElementById('liveAskDepth').textContent = fmtMoney(askN);
+    document.getElementById('liveBidPct').textContent   = bidPct.toFixed(1)+'% of book';
+    document.getElementById('liveAskPct').textContent   = askPct.toFixed(1)+'% of book';
+
+    const v = document.getElementById('liveVerdict');
+    if (imbal>0.2)       { v.textContent='▲ Buyers dominant'; v.style.color='var(--green)'; }
+    else if (imbal>0.08) { v.textContent='↑ Mild buy bias';  v.style.color='var(--green)'; }
+    else if (imbal<-0.2) { v.textContent='▼ Sellers dominant'; v.style.color='var(--red)'; }
+    else if (imbal<-0.08){ v.textContent='↓ Mild sell bias'; v.style.color='var(--red)'; }
+    else                 { v.textContent='↔ Balanced';        v.style.color='var(--muted)'; }
+    document.getElementById('liveSpreadLabel').textContent = 'Spread: '+(d.spread?(d.spread*100).toFixed(2)+'¢':'—');
+
+    document.getElementById('imbalBid').style.width  = bidPct+'%';
+    document.getElementById('imbalAsk').style.width  = askPct+'%';
+    document.getElementById('imbalBidPct').textContent = bidPct.toFixed(1)+'% bids';
+    document.getElementById('imbalAskPct').textContent = askPct.toFixed(1)+'% asks';
+
+    // OB table
+    const mid = ((d.best_bid||0.5)+(d.best_ask||0.5))/2;
+    const maxSz = Math.max(...(d.bids||[]).map(b=>b.size),...(d.asks||[]).map(a=>a.size),1);
+    const levels = [];
+    (d.bids||[]).forEach(b=>levels.push({price:b.price,bid:b.size,ask:0,not:b.notional}));
+    (d.asks||[]).forEach(a=>levels.push({price:a.price,bid:0,ask:a.size,not:a.notional}));
+    levels.sort((a,b)=>b.price-a.price);
+    let rows='', midDone=false;
+    for(const l of levels){
+      if(!midDone&&l.price<mid){
+        rows+=`<tr class="mid-row"><td colspan="4" style="text-align:center;padding:4px">── mid ${(mid*100).toFixed(2)}¢ ──</td></tr>`;
+        midDone=true;
+      }
+      const pct=Math.round(Math.max(l.bid,l.ask)/maxSz*100);
+      if(l.bid>0){
+        rows+=`<tr class="bid-row"><td>${(l.price*100).toFixed(2)}¢</td><td>$${l.bid.toLocaleString('en',{maximumFractionDigits:0})}</td><td></td>
+          <td class="bar-rel"><div class="bar-bg bar-bid" style="width:${pct}%"></div><span class="bar-txt">${fmtMoney(l.not)}</span></td></tr>`;
+      } else {
+        rows+=`<tr class="ask-row"><td>${(l.price*100).toFixed(2)}¢</td><td></td><td>$${l.ask.toLocaleString('en',{maximumFractionDigits:0})}</td>
+          <td class="bar-rel"><div class="bar-bg bar-ask" style="width:${pct}%"></div><span class="bar-txt">${fmtMoney(l.not)}</span></td></tr>`;
+      }
+    }
+    document.getElementById('obBody').innerHTML = rows || '<tr><td colspan="4" class="empty">No data</td></tr>';
+  } catch(e) { console.error('ob', e); }
+}
+
+async function loadHistory() {
+  const hours = document.getElementById('histHours').value;
+  try {
+    const d = await api(`/api/orderbook/history?hours=${hours}&range=0.12`);
+    const snaps = d.snapshots||[];
+    if(!snaps.length) return;
+
+    const avgBid = snaps.reduce((a,s)=>a+s.bid_depth,0)/snaps.length;
+    const avgAsk = snaps.reduce((a,s)=>a+s.ask_depth,0)/snaps.length;
+    document.getElementById('avgBid').textContent = fmtMoney(avgBid);
+    document.getElementById('avgAsk').textContent = fmtMoney(avgAsk);
+
+    const labels   = snaps.map(s=>{const t=new Date(s.timestamp);return t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});});
+    const bidData  = snaps.map(s=>s.bid_depth);
+    const askData  = snaps.map(s=>s.ask_depth);
+    const priceData= snaps.map(s=>(s.yes_price||0)*100);
+    const ctx = document.getElementById('obChart').getContext('2d');
+    if(obChartInst) obChartInst.destroy();
+    obChartInst = new Chart(ctx,{
+      data:{labels,datasets:[
+        {type:'line',label:'Bid $',data:bidData,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',borderWidth:2,pointRadius:0,fill:true,tension:.3,yAxisID:'yD'},
+        {type:'line',label:'Ask $',data:askData,borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.1)',borderWidth:2,pointRadius:0,fill:true,tension:.3,yAxisID:'yD'},
+        {type:'line',label:'YES %',data:priceData,borderColor:'#3b82f6',backgroundColor:'transparent',borderWidth:1.5,borderDash:[4,3],pointRadius:0,tension:.3,yAxisID:'yP'},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:true,position:'top',labels:{color:'#64748b',font:{size:10},boxWidth:10,padding:10}},
+          tooltip:{callbacks:{label:c=>c.dataset.yAxisID==='yP'?'YES: '+c.parsed.y.toFixed(1)+'%':c.dataset.label+': $'+c.parsed.y.toLocaleString('en',{maximumFractionDigits:0})}}},
+        scales:{
+          x:{ticks:{color:'#64748b',maxTicksLimit:8,font:{size:10}},grid:{color:'#1a2535'}},
+          yD:{position:'left',ticks:{color:'#64748b',font:{size:10},callback:v=>v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+v},grid:{color:'#1a2535'}},
+          yP:{position:'right',ticks:{color:'#3b82f6',font:{size:10},callback:v=>v+'%'},grid:{display:false}}
+        }}
+    });
+  } catch(e) { console.error('history', e); }
+}
+
+async function loadSignals() {
+  const hours = document.getElementById('sigHours').value;
+  try {
+    const d = await api(`/api/command/signals?source=orderflow&hours=${hours}&limit=100`);
+    const sigs = d.signals||[];
+    document.getElementById('sSigCount').textContent = sigs.length;
+    if(!sigs.length){
+      document.getElementById('sigFeed').innerHTML = '<div class="empty">No orderflow signals yet. Fires when order book imbalance exceeds ±10%.</div>';
+      return;
+    }
+    document.getElementById('sigFeed').innerHTML = sigs.map(s=>{
+      const ts = new Date(s.timestamp).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      const imp = s.probability_impact_estimate;
+      return `<div class="sig-row">
+        <span class="pill pill-${s.signal_direction}">${s.signal_direction}</span>
+        <div class="sig-body">
+          <div class="sig-headline">${esc(s.headline||'')}</div>
+          <div class="sig-reason">${esc((s.raw_text||'').slice(0,100))}</div>
+        </div>
+        <div class="sig-meta">
+          <div>${ts}</div>
+          <div style="margin-top:2px;display:flex;gap:4px;justify-content:flex-end">
+            <span style="background:rgba(59,130,246,.1);color:var(--blue);padding:1px 5px;border-radius:3px;font-size:9px">C:${s.confidence_score}</span>
+            <span style="background:rgba(249,115,22,.1);color:var(--orange);padding:1px 5px;border-radius:3px;font-size:9px">I:${s.importance_score}</span>
+            ${imp?`<span style="color:${imp>0?'var(--green)':'var(--red)'};font-size:9px">${imp>0?'+':''}${imp.toFixed(1)}pp</span>`:''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error('signals', e); }
+}
+
+async function loadAll() {
+  await Promise.all([loadLiveOB(), loadHistory(), loadSignals()]);
+  document.getElementById('lastScan').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+loadAll();
+setInterval(loadAll, 20000);
+</script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Market — First Strike</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root{--bg:#060a0f;--surface:#0d1520;--border:#1a2535;--text:#e2e8f0;--muted:#64748b;--green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;--purple:#a855f7;--orange:#f97316}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace}
+    header{background:linear-gradient(90deg,#0a0f1a,#0d1520,#0a0f1a);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+    .logo{font-size:20px;font-weight:900;letter-spacing:.12em;color:#fff}.logo span{color:#ef4444}
+    .desk-badge{padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
+    nav.desk-nav{background:#060a0f;border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:2px;align-items:stretch}
+    .desk-nav-item{padding:9px 15px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-decoration:none;border-bottom:3px solid transparent;transition:color .2s;white-space:nowrap}
+    .desk-nav-item:hover{color:var(--text)}
+    .active{color:#22c55e;border-bottom-color:#22c55e}
+    .nav-spacer{flex:1}
+    .container{max-width:1100px;margin:0 auto;padding:24px}
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+    .stat{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+    .stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+    .stat .val{font-size:26px;font-weight:700}.stat .sub{font-size:11px;color:var(--muted);margin-top:3px}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+    @media(max-width:800px){.two-col{grid-template-columns:1fr}}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:16px}
+    .card h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#22c55e;margin-bottom:14px}
+    .gauge-wrap{display:flex;flex-direction:column;align-items:center;padding:8px 0}
+    .gauge-big{font-size:56px;font-weight:900;line-height:1}
+    .gauge-label{font-size:11px;color:var(--muted);margin-top:6px;text-transform:uppercase;letter-spacing:.06em}
+    .vs-row{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:12px}
+    .vs-side{text-align:center}
+    .vs-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+    .vs-val{font-size:36px;font-weight:900}
+    .vs-sub{font-size:11px;color:var(--muted);margin-top:4px}
+    .vs-divider{text-align:center;color:var(--muted);font-size:18px;font-weight:700}
+    .delta-bar-wrap{height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:8px 0;position:relative}
+    .delta-bar-center{position:absolute;left:50%;top:0;width:2px;height:100%;background:var(--muted);transform:translateX(-50%)}
+    .delta-bar-fill{position:absolute;top:0;height:100%;border-radius:4px;transition:all .5s}
+    .signal-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px}
+    .signal-row:last-child{border:none}
+    .pill{padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;flex-shrink:0}
+    .pill-bullish{background:rgba(34,197,94,.15);color:var(--green)}
+    .pill-bearish{background:rgba(239,68,68,.15);color:var(--red)}
+    .pill-neutral{background:rgba(100,116,139,.15);color:var(--muted)}
+    .sig-body{flex:1}
+    .sig-headline{color:var(--text);line-height:1.4;margin-bottom:3px}
+    .sig-reason{font-size:11px;color:var(--muted)}
+    .sig-meta{flex-shrink:0;text-align:right;color:var(--muted);font-size:10px}
+    .chart-wrap{position:relative;height:180px}
+    .controls{display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+    .ctrl-lbl{font-size:11px;color:var(--muted)}
+    select{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:4px;font-size:12px;font-family:inherit}
+    .refresh-btn{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#22c55e;padding:5px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;margin-left:auto}
+    .sig-table{width:100%;border-collapse:collapse;font-size:12px}
+    .sig-table th{color:var(--muted);font-weight:500;padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)}
+    .sig-table td{padding:5px 8px;border-bottom:1px solid rgba(26,37,53,.5)}
+    .sig-table tr:last-child td{border:none}
+    .empty{color:var(--muted);font-size:13px;text-align:center;padding:32px}
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo"><span>FIRST</span> STRIKE</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="desk-badge">📊 Market Desk</span>
+    <span id="lastScan" style="font-size:10px;color:var(--muted)">Loading...</span>
+  </div>
+</header>
+<nav class="desk-nav">
+  <a href="/command"     class="desk-nav-item">🎖️ Command</a>
+  <a href="/pulse"       class="desk-nav-item">🕵️ Pulse</a>
+  <a href="/beacon"      class="desk-nav-item">📡 Beacon</a>
+  <a href="/market-desk" class="desk-nav-item active">📊 Market</a>
+  <a href="/orderflow"   class="desk-nav-item">📈 OrderFlow</a>
+  <div class="nav-spacer"></div>
+  <a href="/" class="desk-nav-item" style="opacity:.55">← Dashboard</a>
+</nav>
+
+<div class="container">
+
+  <div class="stats-row">
+    <div class="stat"><div class="lbl">YES Price</div><div class="val" style="color:var(--blue)" id="sYes">—</div><div class="sub">market price</div></div>
+    <div class="stat"><div class="lbl">Our Model</div><div class="val" style="color:#22c55e" id="sPred">—</div><div class="sub" id="sPredConf">confidence —</div></div>
+    <div class="stat"><div class="lbl">Model Edge</div><div class="val" id="sEdge">—</div><div class="sub" id="sEdgeLabel">—</div></div>
+    <div class="stat"><div class="lbl">Volume</div><div class="val" id="sVol">—</div><div class="sub">total traded</div></div>
+    <div class="stat"><div class="lbl">Liquidity</div><div class="val" id="sLiq">—</div><div class="sub">in book</div></div>
+    <div class="stat"><div class="lbl">Market Signals</div><div class="val" style="color:#22c55e" id="sSigCount">—</div><div class="sub">last 48h</div></div>
+  </div>
+
+  <!-- Model vs Market -->
+  <div class="card">
+    <h2>📊 Model vs Market</h2>
+    <div class="vs-row">
+      <div class="vs-side">
+        <div class="vs-title">Market Price</div>
+        <div class="vs-val" style="color:var(--blue)" id="vsMarket">—</div>
+        <div class="vs-sub">Polymarket</div>
+      </div>
+      <div class="vs-divider">vs</div>
+      <div class="vs-side">
+        <div class="vs-title">Our Model</div>
+        <div class="vs-val" style="color:#22c55e" id="vsModel">—</div>
+        <div class="vs-sub" id="vsModelConf">—</div>
+      </div>
+    </div>
+    <div class="delta-bar-wrap">
+      <div class="delta-bar-center"></div>
+      <div class="delta-bar-fill" id="deltaBar"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
+      <span>Market overpriced</span><span>Fairly priced</span><span>Market underpriced</span>
+    </div>
+    <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text)" id="edgeVerdict">—</div>
+  </div>
+
+  <!-- Price history chart + signals side by side -->
+  <div class="two-col">
+    <div class="card">
+      <h2>📈 YES Price History</h2>
+      <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>🔬 Signal Breakdown</h2>
+      <table class="sig-table">
+        <thead><tr><th>Signal</th><th>Value</th></tr></thead>
+        <tbody id="sigBreakdown"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Market signals feed -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h2 style="margin:0">📋 Market Signal History</h2>
+      <div class="controls" style="margin:0">
+        <span class="ctrl-lbl">Window:</span>
+        <select id="hoursSelect" onchange="loadSignals()">
+          <option value="24">24h</option>
+          <option value="48" selected>48h</option>
+          <option value="72">72h</option>
+        </select>
+        <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="sigFeed"><div class="empty">Loading signals...</div></div>
+  </div>
+
+</div>
+
+<script>
+let priceChartInst = null;
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+function fmtPct(n) { return n!=null ? (n*100).toFixed(1)+'%' : '—'; }
+function fmtMoney(n) {
+  if (!n) return '$0';
+  if (n>=1e6) return '$'+(n/1e6).toFixed(2)+'M';
+  if (n>=1000) return '$'+(n/1000).toFixed(1)+'K';
+  return '$'+n.toFixed(0);
+}
+
+async function loadMarket() {
+  try {
+    const [mkt, ana] = await Promise.all([api('/api/market/iran'), api('/api/analysis/iran')]);
+    const yes = mkt.yes_price;
+    const pred = ana.prediction.predicted_yes_prob;
+    const conf = ana.prediction.confidence;
+    const edge = (pred - yes) * 100;
+
+    document.getElementById('sYes').textContent = fmtPct(yes);
+    document.getElementById('sPred').textContent = fmtPct(pred);
+    document.getElementById('sPredConf').textContent = 'confidence ' + fmtPct(conf);
+    document.getElementById('sVol').textContent = fmtMoney(mkt.volume);
+    document.getElementById('sLiq').textContent = fmtMoney(mkt.liquidity);
+
+    const edgeEl = document.getElementById('sEdge');
+    edgeEl.textContent = (edge>=0?'+':'')+edge.toFixed(1)+'pp';
+    edgeEl.style.color = edge>2?'var(--green)':edge<-2?'var(--red)':'var(--muted)';
+    document.getElementById('sEdgeLabel').textContent = edge>2?'model sees YES edge':edge<-2?'model sees NO edge':'fairly priced';
+
+    // vs panel
+    document.getElementById('vsMarket').textContent = fmtPct(yes);
+    document.getElementById('vsModel').textContent = fmtPct(pred);
+    document.getElementById('vsModelConf').textContent = 'Confidence: ' + fmtPct(conf);
+
+    // delta bar (center = 50%, range ±15pp shown)
+    const bar = document.getElementById('deltaBar');
+    const clamp = Math.max(-15, Math.min(15, edge));
+    const pct50 = 50;
+    if (edge > 0) {
+      bar.style.left = pct50+'%';
+      bar.style.width = (clamp/15*50)+'%';
+      bar.style.background = 'var(--green)';
+    } else {
+      bar.style.left = (pct50 + clamp/15*50)+'%';
+      bar.style.width = (Math.abs(clamp)/15*50)+'%';
+      bar.style.background = 'var(--red)';
+    }
+
+    let verdict = '';
+    if (edge > 5)       verdict = `🟢 <strong style="color:var(--green)">Strong YES edge.</strong> Model sees ${edge.toFixed(1)}pp above market — consider YES position.`;
+    else if (edge > 2)  verdict = `🟡 <strong style="color:var(--yellow)">Mild YES edge</strong> (+${edge.toFixed(1)}pp). Market may be underpricing.`;
+    else if (edge < -5) verdict = `🔴 <strong style="color:var(--red)">Strong NO edge.</strong> Model sees ${Math.abs(edge).toFixed(1)}pp below market — consider NO position.`;
+    else if (edge < -2) verdict = `🟡 <strong style="color:var(--yellow)">Mild NO edge</strong> (${edge.toFixed(1)}pp). Market may be overpricing.`;
+    else                verdict = `⚪ <strong>Market fairly priced.</strong> Model and market within ±2pp — no clear edge.`;
+    document.getElementById('edgeVerdict').innerHTML = verdict;
+
+    // Signal breakdown table
+    const s = ana.signals;
+    const rows = [
+      ['Market Price', fmtPct(s.market_price)],
+      ['Momentum', s.momentum!=null?(s.momentum>0?'+':'')+s.momentum.toFixed(3):'—'],
+      ['OB Imbalance', s.orderbook_imbalance!=null?(s.orderbook_imbalance>0?'+':'')+s.orderbook_imbalance.toFixed(3):'—'],
+      ['Volume Signal', fmtMoney(s.volume_usd)],
+      ['Trade Flow', s.trade_flow!=null?(s.trade_flow>0?'+':'')+s.trade_flow.toFixed(3):'—'],
+      ['Time Decay', s.time_signal!=null?s.time_signal.toFixed(3):'—'],
+      ['Bid Depth', fmtMoney(s.total_bid_notional)],
+      ['Ask Depth', fmtMoney(s.total_ask_notional)],
+      ['Spread', s.ob_spread_cents?s.ob_spread_cents+'¢':'—'],
+      ['History Pts', s.price_history_points??'—'],
+    ];
+    document.getElementById('sigBreakdown').innerHTML = rows.map(([k,v])=>`<tr><td style="color:var(--muted)">${k}</td><td style="color:var(--text);font-weight:600;text-align:right">${v}</td></tr>`).join('');
+
+  } catch(e) { console.error('market', e); }
+}
+
+async function loadPriceHistory() {
+  try {
+    const d = await api('/api/price-history/iran');
+    const hist = d.history || [];
+    if (!hist.length) return;
+    const labels = hist.map(h => { const t=new Date((h.t||h.time)*1000); return t.toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
+    const prices = hist.map(h => parseFloat(h.p||h.price||0)*100);
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    if (priceChartInst) priceChartInst.destroy();
+    priceChartInst = new Chart(ctx, {
+      type:'line',
+      data:{labels,datasets:[{label:'YES %',data:prices,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.08)',borderWidth:2,pointRadius:0,fill:true,tension:.3}]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'YES: '+c.parsed.y.toFixed(1)+'%'}}},
+        scales:{x:{ticks:{color:'#64748b',maxTicksLimit:7,font:{size:10}},grid:{color:'#1a2535'}},
+                y:{ticks:{color:'#64748b',callback:v=>v+'%',font:{size:10}},grid:{color:'#1a2535'}}}}
+    });
+  } catch(e) { console.error('history', e); }
+}
+
+async function loadSignals() {
+  const hours = document.getElementById('hoursSelect').value;
+  try {
+    const d = await api(`/api/command/signals?source=market&hours=${hours}&limit=100`);
+    const sigs = d.signals || [];
+    document.getElementById('sSigCount').textContent = sigs.length;
+    if (!sigs.length) {
+      document.getElementById('sigFeed').innerHTML = '<div class="empty">No market signals yet. Signals fire when price moves ≥2pp or model diverges ≥3pp from market.</div>';
+      return;
+    }
+    document.getElementById('sigFeed').innerHTML = sigs.map(s => {
+      const ts = new Date(s.timestamp).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      const imp = s.probability_impact_estimate;
+      return `<div class="signal-row">
+        <span class="pill pill-${s.signal_direction}">${s.signal_direction}</span>
+        <div class="sig-body">
+          <div class="sig-headline">${esc(s.headline||'')}</div>
+          <div class="sig-reason">${esc((s.reasoning||'').slice(0,100))}</div>
+        </div>
+        <div class="sig-meta">
+          <div>${ts}</div>
+          <div style="margin-top:2px;display:flex;gap:4px;justify-content:flex-end">
+            <span style="background:rgba(59,130,246,.1);color:var(--blue);padding:1px 5px;border-radius:3px;font-size:9px">C:${s.confidence_score}</span>
+            <span style="background:rgba(249,115,22,.1);color:var(--orange);padding:1px 5px;border-radius:3px;font-size:9px">I:${s.importance_score}</span>
+            ${imp?`<span style="color:${imp>0?'var(--green)':'var(--red)'};font-size:9px">${imp>0?'+':''}${imp.toFixed(1)}pp</span>`:''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error('signals', e); }
+}
+
+async function loadAll() {
+  await Promise.all([loadMarket(), loadPriceHistory(), loadSignals()]);
+  document.getElementById('lastScan').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+loadAll();
+setInterval(loadAll, 30000);
+</script>
+</body>
+</html>

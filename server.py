@@ -334,6 +334,26 @@ def command_center():
     with open(Path(__file__).parent / "static" / "command.html") as f:
         return f.read()
 
+@app.get("/pulse", response_class=HTMLResponse)
+def pulse_desk():
+    with open(Path(__file__).parent / "static" / "desk-pulse.html") as f:
+        return f.read()
+
+@app.get("/beacon", response_class=HTMLResponse)
+def beacon_desk():
+    with open(Path(__file__).parent / "static" / "desk-beacon.html") as f:
+        return f.read()
+
+@app.get("/market-desk", response_class=HTMLResponse)
+def market_desk():
+    with open(Path(__file__).parent / "static" / "desk-market.html") as f:
+        return f.read()
+
+@app.get("/orderflow", response_class=HTMLResponse)
+def orderflow_desk():
+    with open(Path(__file__).parent / "static" / "desk-orderflow.html") as f:
+        return f.read()
+
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
