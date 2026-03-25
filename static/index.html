@@ -236,7 +236,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h2 style="margin:0">Order Book Depth Over Time</h2>
         <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-size:11px;color:var(--muted)">Window: ±<span id="histRangeCents">10.0</span>¢</span>
+          <span style="font-size:11px;color:var(--muted)">Window: ±<span id="histRangeCents">10.0</span>¢ &nbsp;<span id="histRangeLabel" style="font-size:10px"></span></span>
           <select id="histHours" onchange="loadOBHistory()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 8px;border-radius:4px;font-size:12px;font-family:monospace">
             <option value="6">6h</option>
             <option value="12">12h</option>
@@ -317,6 +317,7 @@ let priceChartInstance = null;
 let obHistoryChartInstance = null;
 let currentRange = 0.10;   // ± cents window, default 10¢
 let latestOBDepth = null;  // most recent full depth from API
+let obHistoryDebounceTimer = null;
 
 async function api(path, method='GET') {
   const r = await fetch(path, { method });
@@ -392,6 +393,16 @@ async function loadAnalysis() {
 
 // ── Range selector controls ───────────────────────────────────────────────────
 
+function _scheduleOBHistoryRefresh() {
+  clearTimeout(obHistoryDebounceTimer);
+  // Show "updating" hint immediately
+  const label = document.getElementById('histRangeLabel');
+  if (label) { label.textContent = 'updating…'; label.style.color = 'var(--yellow)'; }
+  obHistoryDebounceTimer = setTimeout(() => {
+    loadOBHistory();
+  }, 350);
+}
+
 function onRangeChange(val) {
   const v = Math.max(0.01, Math.min(0.30, parseFloat(val) || 0.10));
   currentRange = v;
@@ -399,7 +410,7 @@ function onRangeChange(val) {
   document.getElementById('rangeCents').textContent = (v * 100).toFixed(1);
   document.getElementById('histRangeCents').textContent = (v * 100).toFixed(1);
   if (latestOBDepth) renderRangeComparison(latestOBDepth, v);
-  loadOBHistory();
+  _scheduleOBHistoryRefresh();
 }
 
 function onSliderChange(val) {
@@ -409,7 +420,7 @@ function onSliderChange(val) {
   document.getElementById('rangeCents').textContent = (v * 100).toFixed(1);
   document.getElementById('histRangeCents').textContent = (v * 100).toFixed(1);
   if (latestOBDepth) renderRangeComparison(latestOBDepth, v);
-  loadOBHistory();
+  _scheduleOBHistoryRefresh();
 }
 
 function renderRangeComparison(depth, range) {
@@ -455,6 +466,9 @@ async function loadOBHistory() {
     const snaps = d.snapshots || [];
 
     document.getElementById('histCount').textContent = snaps.length;
+
+    const rangeLabel = document.getElementById('histRangeLabel');
+    if (rangeLabel) { rangeLabel.textContent = ''; }
 
     if (!snaps.length) {
       document.getElementById('histAvgBid').textContent = '—';
