@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Polymarket Analyzer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+      --accent: #1f6feb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; font-size: 14px; }
+
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 18px; font-weight: 600; color: var(--text); }
+    header h1 span { color: var(--blue); }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .last-updated { color: var(--muted); font-size: 12px; }
+
+    .container { max-width: 1300px; margin: 0 auto; padding: 24px; }
+
+    /* Top stats bar */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .green { color: var(--green); }
+    .red { color: var(--red); }
+    .yellow { color: var(--yellow); }
+    .blue { color: var(--blue); }
+    .purple { color: var(--purple); }
+
+    /* Main grid */
+    .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media(max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+    .card h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 16px; }
+
+    /* Price chart */
+    .chart-wrap { position: relative; height: 200px; }
+
+    /* Order book */
+    .ob-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .ob-summary { display: flex; gap: 24px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+    .ob-summary strong { color: var(--text); }
+    .ob-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: monospace; }
+    .ob-table th { color: var(--muted); font-weight: 500; padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--border); }
+    .ob-table th:first-child { text-align: left; }
+    .ob-table td { padding: 3px 8px; text-align: right; }
+    .ob-table td:first-child { text-align: left; }
+    .ob-row-bid td { color: var(--green); }
+    .ob-row-ask td { color: var(--red); }
+    .ob-row-mid td { color: var(--muted); font-style: italic; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border); }
+    .bar-cell { position: relative; }
+    .bar-fill { position: absolute; top: 1px; bottom: 1px; border-radius: 2px; opacity: 0.25; }
+    .bar-fill-bid { background: var(--green); right: 0; }
+    .bar-fill-ask { background: var(--red); left: 0; }
+    .bar-text { position: relative; z-index: 1; }
+
+    /* Imbalance bar */
+    .imbalance-wrap { margin: 12px 0; }
+    .imbalance-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .imbalance-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; display: flex; }
+    .imbalance-bid { background: var(--green); transition: width .5s; }
+    .imbalance-ask { background: var(--red); transition: width .5s; }
+
+    /* Analysis panel */
+    .analysis-text { font-size: 12px; line-height: 1.7; color: var(--muted); white-space: pre-wrap; font-family: monospace; max-height: 340px; overflow-y: auto; }
+    .analysis-text .highlight { color: var(--text); }
+
+    /* Signals */
+    .signals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .signal-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .signal-row:last-child { border: none; }
+    .signal-name { color: var(--muted); }
+    .signal-val { font-weight: 600; font-family: monospace; }
+
+    /* Predictions table */
+    .pred-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .pred-table th { color: var(--muted); font-weight: 500; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+    .pred-table td { padding: 6px 10px; border-bottom: 1px solid #1c2128; }
+    .pred-table tr:last-child td { border: none; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .badge-yes { background: rgba(63,185,80,.2); color: var(--green); }
+    .badge-no { background: rgba(248,81,73,.2); color: var(--red); }
+    .badge-pending { background: rgba(88,166,255,.15); color: var(--blue); }
+
+    /* Performance */
+    .perf-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .perf-metric { text-align: center; }
+    .perf-metric .big { font-size: 32px; font-weight: 700; margin: 4px 0; }
+    .perf-metric .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+
+    /* Buttons */
+    .btn { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-weight: 500; transition: opacity .2s; }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+
+    /* Loading spinner */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .full-width { grid-column: 1 / -1; }
+    .error { color: var(--red); font-size: 12px; margin-top: 8px; }
+    .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>Poly</span>market Analyzer</h1>
+  <div style="display:flex;align-items:center;gap:16px">
+    <span><span class="live-dot"></span><span class="last-updated" id="lastUpdated">Loading...</span></span>
+    <button class="btn btn-sm" onclick="refreshAll()">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stats bar -->
+  <div class="stats-grid" id="statsBar">
+    <div class="stat-card"><div class="label">YES Price</div><div class="value blue" id="statYes">—</div><div class="sub">current market</div></div>
+    <div class="stat-card"><div class="label">Our Prediction</div><div class="value purple" id="statPred">—</div><div class="sub" id="statConf">confidence —</div></div>
+    <div class="stat-card"><div class="label">Volume</div><div class="value" id="statVol">—</div><div class="sub">total traded</div></div>
+    <div class="stat-card"><div class="label">Liquidity</div><div class="value" id="statLiq">—</div><div class="sub">in order book</div></div>
+    <div class="stat-card"><div class="label">OB Imbalance</div><div class="value" id="statImbal">—</div><div class="sub" id="statImbalLabel">—</div></div>
+    <div class="stat-card"><div class="label">Resolves</div><div class="value" id="statExpiry" style="font-size:18px">—</div><div class="sub" id="statDaysLeft">—</div></div>
+  </div>
+
+  <!-- Action buttons -->
+  <div class="btn-row">
+    <button class="btn" id="btnPredict" onclick="storePrediction()">📌 Store Prediction</button>
+    <button class="btn btn-ghost" onclick="resolveAll()">✓ Check Resolutions</button>
+    <button class="btn btn-ghost" onclick="refineWeights()">⚙ Refine Algorithm</button>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- Price History Chart -->
+    <div class="card">
+      <h2>YES Price History</h2>
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Order Book -->
+    <div class="card">
+      <h2>Order Book Depth</h2>
+      <div class="ob-summary">
+        <span>Bid: <strong class="green" id="obBid">—</strong></span>
+        <span>Ask: <strong class="red" id="obAsk">—</strong></span>
+        <span>Spread: <strong id="obSpread">—</strong></span>
+      </div>
+      <div class="imbalance-wrap">
+        <div class="imbalance-label">
+          <span class="green">Bids <span id="obBidTotal">$0</span></span>
+          <span class="red">Asks <span id="obAskTotal">$0</span></span>
+        </div>
+        <div class="imbalance-track">
+          <div class="imbalance-bid" id="imbalanceBid" style="width:50%"></div>
+          <div class="imbalance-ask" id="imbalanceAsk" style="width:50%"></div>
+        </div>
+      </div>
+      <div style="max-height:260px;overflow-y:auto">
+        <table class="ob-table">
+          <thead><tr><th>Price</th><th>Bid $</th><th>Ask $</th><th style="width:80px">Depth</th></tr></thead>
+          <tbody id="obBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Analysis -->
+    <div class="card">
+      <h2>Signal Analysis</h2>
+      <div class="signals-grid" id="signalsGrid">
+        <div class="empty">Loading signals...</div>
+      </div>
+    </div>
+
+    <!-- Performance -->
+    <div class="card">
+      <h2>Prediction Performance</h2>
+      <div class="perf-grid" id="perfGrid">
+        <div class="perf-metric"><div class="label">Predictions</div><div class="big blue" id="perfTotal">—</div></div>
+        <div class="perf-metric"><div class="label">Accuracy</div><div class="big green" id="perfAcc">—</div></div>
+        <div class="perf-metric"><div class="label">Brier Score</div><div class="big yellow" id="perfBrier">—</div></div>
+        <div class="perf-metric"><div class="label">P&L (units)</div><div class="big" id="perfPL">—</div></div>
+      </div>
+    </div>
+
+    <!-- Predictions History (full width) -->
+    <div class="card full-width">
+      <h2>Prediction Log</h2>
+      <div style="overflow-x:auto">
+        <table class="pred-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Market</th>
+              <th>Our Pred</th>
+              <th>Market Price</th>
+              <th>Confidence</th>
+              <th>Outcome</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody id="predBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let priceChartInstance = null;
+
+async function api(path, method='GET') {
+  const r = await fetch(path, { method });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+function fmt(n, decimals=1) {
+  if (n === null || n === undefined) return '—';
+  return (n * 100).toFixed(decimals) + '¢';
+}
+function fmtPct(n) {
+  if (n === null || n === undefined) return '—';
+  return (n * 100).toFixed(1) + '%';
+}
+function fmtMoney(n) {
+  if (!n) return '$0';
+  if (n >= 1_000_000) return '$' + (n/1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000) return '$' + (n/1_000).toFixed(1) + 'K';
+  return '$' + n.toFixed(0);
+}
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return Math.ceil((d - now) / 86400000);
+}
+
+async function loadMarket() {
+  try {
+    const d = await api('/api/market/iran');
+    document.getElementById('statYes').textContent = fmtPct(d.yes_price);
+    document.getElementById('statVol').textContent = fmtMoney(d.volume);
+    document.getElementById('statLiq').textContent = fmtMoney(d.liquidity);
+    const days = daysUntil(d.end_date);
+    document.getElementById('statExpiry').textContent = d.end_date ? d.end_date.slice(0,10) : '—';
+    document.getElementById('statDaysLeft').textContent = days !== null ? `${days} days left` : '';
+    return d;
+  } catch(e) { console.error('market', e); }
+}
+
+async function loadAnalysis() {
+  try {
+    const d = await api('/api/analysis/iran');
+    document.getElementById('statPred').textContent = fmtPct(d.prediction.predicted_yes_prob);
+    document.getElementById('statConf').textContent = `confidence ${fmtPct(d.prediction.confidence)}`;
+
+    const s = d.signals;
+    const rows = [
+      ['Market Price', fmtPct(s.market_price)],
+      ['Best Bid', s.best_bid ? fmt(s.best_bid) : '—'],
+      ['Best Ask', s.best_ask ? fmt(s.best_ask) : '—'],
+      ['Spread', s.ob_spread_cents ? s.ob_spread_cents + '¢' : '—'],
+      ['Bid Depth', fmtMoney(s.total_bid_notional)],
+      ['Ask Depth', fmtMoney(s.total_ask_notional)],
+      ['Momentum', s.momentum !== undefined ? (s.momentum > 0 ? '+' : '') + s.momentum.toFixed(3) : '—'],
+      ['Volume', fmtMoney(s.volume_usd)],
+      ['Trade Flow', s.trade_flow !== undefined ? (s.trade_flow > 0 ? '+' : '') + s.trade_flow.toFixed(3) : '—'],
+      ['OB Imbalance', s.orderbook_imbalance !== undefined ? (s.orderbook_imbalance > 0 ? '+' : '') + s.orderbook_imbalance.toFixed(3) : '—'],
+      ['Time Signal', s.time_signal !== undefined ? s.time_signal.toFixed(3) : '—'],
+      ['History Points', s.price_history_points ?? '—'],
+    ];
+
+    const grid = document.getElementById('signalsGrid');
+    grid.innerHTML = rows.map(([name, val]) => `
+      <div class="signal-row">
+        <span class="signal-name">${name}</span>
+        <span class="signal-val">${val}</span>
+      </div>
+    `).join('');
+  } catch(e) { console.error('analysis', e); }
+}
+
+async function loadOrderBook() {
+  try {
+    const d = await api('/api/orderbook/iran?range=0.12');
+
+    document.getElementById('obBid').textContent = d.best_bid ? fmt(d.best_bid) : '—';
+    document.getElementById('obAsk').textContent = d.best_ask ? fmt(d.best_ask) : '—';
+    document.getElementById('obSpread').textContent = d.spread ? (d.spread * 100).toFixed(2) + '¢' : '—';
+    document.getElementById('obBidTotal').textContent = fmtMoney(d.total_bid_notional);
+    document.getElementById('obAskTotal').textContent = fmtMoney(d.total_ask_notional);
+
+    const totalNotional = (d.total_bid_notional || 0) + (d.total_ask_notional || 0);
+    const bidPct = totalNotional > 0 ? (d.total_bid_notional / totalNotional * 100) : 50;
+    document.getElementById('imbalanceBid').style.width = bidPct + '%';
+    document.getElementById('imbalanceAsk').style.width = (100 - bidPct) + '%';
+
+    // OB imbalance stat
+    const imbal = d.imbalance || 0;
+    const imbalEl = document.getElementById('statImbal');
+    imbalEl.textContent = (imbal > 0 ? '+' : '') + imbal.toFixed(3);
+    imbalEl.className = 'value ' + (imbal > 0.05 ? 'green' : imbal < -0.05 ? 'red' : 'yellow');
+    document.getElementById('statImbalLabel').textContent = imbal > 0.1 ? 'buy pressure' : imbal < -0.1 ? 'sell pressure' : 'balanced';
+
+    // Merge bids and asks into one sorted table
+    const maxSize = Math.max(
+      ...d.bids.map(b => b.size),
+      ...d.asks.map(a => a.size),
+      1
+    );
+
+    const mid = ((d.best_bid || 0.5) + (d.best_ask || 0.5)) / 2;
+
+    // Build combined list
+    const allLevels = [];
+    d.bids.forEach(b => allLevels.push({price: b.price, bid: b.size, ask: 0, notional: b.notional}));
+    d.asks.forEach(a => allLevels.push({price: a.price, bid: 0, ask: a.size, notional: a.notional}));
+    allLevels.sort((a, b) => b.price - a.price);
+
+    const tbody = document.getElementById('obBody');
+    let rows = '';
+    let midInserted = false;
+
+    for (const lvl of allLevels) {
+      if (!midInserted && lvl.price < mid) {
+        rows += `<tr class="ob-row-mid"><td colspan="4" style="text-align:center;padding:4px 0">── mid ${(mid*100).toFixed(2)}¢ ──</td></tr>`;
+        midInserted = true;
+      }
+      const barPct = Math.round((Math.max(lvl.bid, lvl.ask) / maxSize) * 100);
+      if (lvl.bid > 0) {
+        rows += `<tr class="ob-row-bid">
+          <td>${(lvl.price*100).toFixed(2)}¢</td>
+          <td>$${lvl.bid.toLocaleString('en',{maximumFractionDigits:0})}</td>
+          <td></td>
+          <td class="bar-cell" style="position:relative">
+            <div class="bar-fill bar-fill-bid" style="width:${barPct}%"></div>
+            <span class="bar-text">$${fmtMoney(lvl.notional)}</span>
+          </td>
+        </tr>`;
+      } else {
+        rows += `<tr class="ob-row-ask">
+          <td>${(lvl.price*100).toFixed(2)}¢</td>
+          <td></td>
+          <td>$${lvl.ask.toLocaleString('en',{maximumFractionDigits:0})}</td>
+          <td class="bar-cell" style="position:relative">
+            <div class="bar-fill bar-fill-ask" style="width:${barPct}%"></div>
+            <span class="bar-text">$${fmtMoney(lvl.notional)}</span>
+          </td>
+        </tr>`;
+      }
+    }
+    tbody.innerHTML = rows || '<tr><td colspan="4" class="empty">No data</td></tr>';
+  } catch(e) { console.error('orderbook', e); }
+}
+
+async function loadPriceHistory() {
+  try {
+    const d = await api('/api/price-history/iran');
+    const history = d.history || [];
+    if (!history.length) return;
+
+    const labels = history.map(h => {
+      const t = new Date((h.t || h.time) * 1000);
+      return t.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    });
+    const prices = history.map(h => parseFloat(h.p || h.price || 0) * 100);
+
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    if (priceChartInstance) priceChartInstance.destroy();
+
+    priceChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'YES Price (%)',
+          data: prices,
+          borderColor: '#58a6ff',
+          backgroundColor: 'rgba(88,166,255,0.08)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => `YES: ${ctx.parsed.y.toFixed(1)}%`
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#8b949e', maxTicksLimit: 8, font: { size: 11 } },
+            grid: { color: '#21262d' }
+          },
+          y: {
+            ticks: { color: '#8b949e', callback: v => v + '%', font: { size: 11 } },
+            grid: { color: '#21262d' }
+          }
+        }
+      }
+    });
+  } catch(e) { console.error('history', e); }
+}
+
+async function loadPredictions() {
+  try {
+    const d = await api('/api/predictions');
+    const preds = (d.predictions || []).reverse();
+    const tbody = document.getElementById('predBody');
+    if (!preds.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No predictions stored yet. Click "Store Prediction" to begin.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = preds.map(p => {
+      const ts = new Date(p.timestamp).toLocaleString();
+      const outBadge = p.outcome
+        ? `<span class="badge badge-${p.outcome.toLowerCase()}">${p.outcome}</span>`
+        : `<span class="badge badge-pending">pending</span>`;
+      const score = p.score !== null && p.score !== undefined ? p.score.toFixed(4) : '—';
+      const scoreColor = p.score !== null && p.score !== undefined
+        ? (p.score < 0.1 ? 'green' : p.score > 0.3 ? 'red' : 'yellow') : '';
+      return `<tr>
+        <td style="color:var(--muted);white-space:nowrap">${ts}</td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.market_question}</td>
+        <td class="blue">${fmtPct(p.predicted_yes_prob)}</td>
+        <td>${fmtPct(p.yes_price_at_prediction)}</td>
+        <td style="color:var(--muted)">${fmtPct(p.confidence)}</td>
+        <td>${outBadge}</td>
+        <td class="${scoreColor}">${score}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error('predictions', e); }
+}
+
+async function loadPerformance() {
+  try {
+    const d = await api('/api/performance');
+    document.getElementById('perfTotal').textContent = d.total_predictions;
+    document.getElementById('perfAcc').textContent = d.resolved ? fmtPct(d.accuracy) : '—';
+    document.getElementById('perfBrier').textContent = d.resolved ? d.avg_brier_score.toFixed(4) : '—';
+    const pl = d.profit_loss_units;
+    const plEl = document.getElementById('perfPL');
+    plEl.textContent = d.resolved ? (pl >= 0 ? '+' : '') + pl.toFixed(2) : '—';
+    plEl.className = 'big ' + (pl > 0 ? 'green' : pl < 0 ? 'red' : '');
+  } catch(e) { console.error('performance', e); }
+}
+
+async function storePrediction() {
+  const btn = document.getElementById('btnPredict');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Storing...';
+  try {
+    const d = await api('/api/predict/iran', 'POST');
+    btn.textContent = `✓ Stored (${fmtPct(d.predicted_yes_prob)})`;
+    setTimeout(() => { btn.textContent = '📌 Store Prediction'; btn.disabled = false; }, 3000);
+    await loadPredictions();
+    await loadPerformance();
+  } catch(e) {
+    btn.textContent = '✗ Error';
+    setTimeout(() => { btn.textContent = '📌 Store Prediction'; btn.disabled = false; }, 2000);
+  }
+}
+
+async function resolveAll() {
+  try {
+    const d = await api('/api/resolve', 'POST');
+    alert(`Resolved ${d.resolved} prediction(s).`);
+    await loadPredictions();
+    await loadPerformance();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function refineWeights() {
+  try {
+    const d = await api('/api/refine', 'POST');
+    const deltas = Object.entries(d.delta).map(([k,v]) => `${k}: ${v > 0 ? '+' : ''}${v.toFixed(4)}`).join('\n');
+    alert('Weights refined!\n\n' + deltas);
+  } catch(e) { alert('Error (need ≥3 resolved predictions): ' + e.message); }
+}
+
+async function refreshAll() {
+  document.getElementById('lastUpdated').textContent = 'Refreshing...';
+  await Promise.all([
+    loadMarket(),
+    loadAnalysis(),
+    loadOrderBook(),
+    loadPriceHistory(),
+    loadPredictions(),
+    loadPerformance(),
+  ]);
+  document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+// Auto-refresh every 60 seconds
+refreshAll();
+setInterval(refreshAll, 60000);
+</script>
+</body>
+</html>
