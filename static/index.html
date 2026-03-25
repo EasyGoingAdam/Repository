@@ -121,28 +121,123 @@
     .error { color: var(--red); font-size: 12px; margin-top: 8px; }
     .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px; }
 
-    /* Intelligence desk nav */
-    .intel-nav { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
-    @media(max-width:800px){ .intel-nav { grid-template-columns: repeat(3,1fr); } }
-    .desk-card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-      padding: 12px 14px; text-decoration: none; display: flex; flex-direction: column; gap: 5px;
-      transition: border-color .2s, background .2s; cursor: pointer;
+    /* ── COMMAND INTELLIGENCE PANEL ── */
+    .cmd-panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 20px; overflow: hidden;
     }
-    .desk-card:hover { background: #1c2128; }
-    .desk-card .dc-header { display: flex; align-items: center; justify-content: space-between; }
-    .desk-card .dc-icon { font-size: 20px; line-height: 1; }
-    .desk-card .dc-status { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: 8px; }
+    .cmd-panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px; border-bottom: 1px solid var(--border);
+      background: #0d1117;
+    }
+    .cmd-panel-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .1em; color: var(--muted);
+    }
+    .cmd-panel-title span { color: #ef4444; }
+    .cmd-status-pill {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+      padding: 3px 10px; border-radius: 10px; display: flex; align-items: center; gap: 6px;
+    }
+    .cmd-status-pill .live-dot { margin: 0; }
+    .cmd-panel-body { display: grid; grid-template-columns: auto 1fr; gap: 0; }
+    @media(max-width:700px){ .cmd-panel-body { grid-template-columns: 1fr; } }
+
+    /* Verdict block */
+    .cmd-verdict {
+      padding: 28px 32px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+      border-right: 1px solid var(--border); min-width: 200px;
+    }
+    @media(max-width:700px){ .cmd-verdict { border-right: none; border-bottom: 1px solid var(--border); } }
+    .cmd-verdict-badge {
+      font-size: 28px; font-weight: 900; letter-spacing: .04em;
+      padding: 10px 24px; border-radius: 8px; text-align: center;
+    }
+    .verdict-yes  { background: rgba(63,185,80,.15); color: var(--green); border: 2px solid rgba(63,185,80,.4); }
+    .verdict-no   { background: rgba(248,81,73,.15); color: var(--red); border: 2px solid rgba(248,81,73,.4); }
+    .verdict-hold { background: rgba(139,148,158,.1); color: var(--muted); border: 2px solid rgba(139,148,158,.25); }
+    .cmd-odds-est {
+      font-size: 36px; font-weight: 700; line-height: 1; font-family: monospace;
+    }
+    .cmd-odds-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+
+    /* Details block */
+    .cmd-details { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+    .cmd-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media(max-width:900px){ .cmd-metrics { grid-template-columns: repeat(2,1fr); } }
+    .cmd-metric { }
+    .cmd-metric-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    .cmd-metric-value { font-size: 20px; font-weight: 700; font-family: monospace; }
+
+    .cmd-reason {
+      font-size: 12px; color: var(--muted); line-height: 1.6;
+      padding: 10px 14px; background: #0d1117; border-radius: 6px;
+      border-left: 3px solid var(--border);
+    }
+    .cmd-reason strong { color: var(--text); }
+
+    /* Desk links row */
+    .cmd-desk-links {
+      display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 20px;
+      border-top: 1px solid var(--border); background: #0d1117;
+    }
+    .cmd-desk-link {
+      font-size: 11px; font-weight: 600; text-decoration: none;
+      padding: 4px 12px; border-radius: 14px; border: 1px solid transparent;
+      transition: all .2s; display: flex; align-items: center; gap: 5px;
+    }
+    .cmd-desk-link:hover { filter: brightness(1.3); }
+    .cdl-pulse   { color: var(--purple); border-color: rgba(188,140,255,.3); background: rgba(188,140,255,.07); }
+    .cdl-beacon  { color: var(--blue);   border-color: rgba(88,166,255,.3);  background: rgba(88,166,255,.07);  }
+    .cdl-market  { color: var(--green);  border-color: rgba(63,185,80,.3);   background: rgba(63,185,80,.07);   }
+    .cdl-of      { color: var(--yellow); border-color: rgba(210,153,34,.3);  background: rgba(210,153,34,.07);  }
+    .cdl-count { opacity: .7; font-weight: 400; }
+
+    /* Alert levels */
+    .alert-URGENT   { color: #ff4040; }
+    .alert-IMPORTANT{ color: var(--yellow); }
+    .alert-DIGEST   { color: var(--green); }
+    .alert-NO_ACTION{ color: var(--muted); }
+
+    /* ── ALGORITHM EXPLAINER ── */
+    .algo-section {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      margin-top: 16px; overflow: hidden;
+    }
+    .algo-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; cursor: pointer; user-select: none;
+      background: #0d1117; border-bottom: 1px solid var(--border);
+    }
+    .algo-header:hover { background: #131920; }
+    .algo-header h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
+    .algo-header h2 span { color: var(--blue); }
+    .algo-toggle { font-size: 12px; color: var(--muted); }
+    .algo-body { padding: 24px 28px; display: none; }
+    .algo-body.open { display: block; }
+    .algo-section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+      color: var(--muted); margin: 20px 0 10px; border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .algo-section-title:first-child { margin-top: 0; }
+    .algo-body p { font-size: 13px; color: var(--muted); line-height: 1.75; margin-bottom: 10px; }
+    .algo-body p strong { color: var(--text); }
+    .algo-weight-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+    .algo-weight-table th { color: var(--muted); font-weight: 600; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+    .algo-weight-table td { padding: 7px 10px; border-bottom: 1px solid #1c2128; color: var(--text); }
+    .algo-weight-table tr:last-child td { border: none; }
+    .algo-weight-table .wt-bar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-left: 6px; }
+    .algo-formula {
+      background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px 16px; font-family: monospace; font-size: 12px; color: var(--blue);
+      margin: 10px 0; line-height: 1.8; overflow-x: auto; white-space: pre;
+    }
     .status-active  { background: rgba(63,185,80,.2); color: var(--green); }
     .status-standby { background: rgba(139,148,158,.12); color: var(--muted); }
-    .desk-card .dc-name { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-    .desk-card .dc-count { font-size: 11px; color: var(--muted); }
-    .desk-card .dc-desc { font-size: 10px; color: var(--muted); line-height: 1.3; }
-    .dc-cmd  { border-color: rgba(239,68,68,.3); }  .dc-cmd .dc-name  { color: #ef4444; }
-    .dc-pulse{ border-color: rgba(188,140,255,.3); } .dc-pulse .dc-name{ color: var(--purple); }
-    .dc-beacon{border-color: rgba(88,166,255,.3); }  .dc-beacon .dc-name{color: var(--blue); }
-    .dc-mkt  { border-color: rgba(63,185,80,.3); }  .dc-mkt .dc-name  { color: var(--green); }
-    .dc-of   { border-color: rgba(210,153,34,.3); }  .dc-of .dc-name   { color: var(--yellow); }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
@@ -156,7 +251,6 @@
   <h1><span>Poly</span>market Analyzer</h1>
   <div style="display:flex;align-items:center;gap:16px">
     <span><span class="live-dot"></span><span class="last-updated" id="lastUpdated">Loading...</span></span>
-    <a href="/command" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:.05em">⚡ FIRST STRIKE</a>
     <button class="btn btn-sm" onclick="refreshAll()">↻ Refresh</button>
   </div>
 </header>
@@ -166,40 +260,70 @@
   <!-- Stats bar -->
   <div class="stats-grid" id="statsBar">
     <div class="stat-card"><div class="label">YES Price</div><div class="value blue" id="statYes">—</div><div class="sub">current market</div></div>
-    <div class="stat-card"><div class="label">Our Prediction</div><div class="value purple" id="statPred">—</div><div class="sub" id="statConf">confidence —</div></div>
+    <div class="stat-card"><div class="label">Model Estimate</div><div class="value purple" id="statPred">—</div><div class="sub" id="statConf">confidence —</div></div>
     <div class="stat-card"><div class="label">Volume</div><div class="value" id="statVol">—</div><div class="sub">total traded</div></div>
     <div class="stat-card"><div class="label">Liquidity</div><div class="value" id="statLiq">—</div><div class="sub">in order book</div></div>
     <div class="stat-card"><div class="label">OB Imbalance</div><div class="value" id="statImbal">—</div><div class="sub" id="statImbalLabel">—</div></div>
     <div class="stat-card"><div class="label">Resolves</div><div class="value" id="statExpiry" style="font-size:18px">—</div><div class="sub" id="statDaysLeft">—</div></div>
   </div>
 
-  <!-- First Strike Intelligence Nav -->
-  <div class="intel-nav" id="intelNav">
-    <a href="/command" class="desk-card dc-cmd">
-      <div class="dc-header"><span class="dc-icon">🎖️</span><span class="dc-status status-active" id="stat-cmd">ONLINE</span></div>
-      <div class="dc-name">Command</div>
-      <div class="dc-count" id="cnt-cmd">War Room &amp; Aggregation</div>
-    </a>
-    <a href="/pulse" class="desk-card dc-pulse">
-      <div class="dc-header"><span class="dc-icon">🕵️</span><span class="dc-status status-standby" id="stat-pulse">STANDBY</span></div>
-      <div class="dc-name">Pulse</div>
-      <div class="dc-count" id="cnt-pulse">X/Twitter Intel</div>
-    </a>
-    <a href="/beacon" class="desk-card dc-beacon">
-      <div class="dc-header"><span class="dc-icon">📡</span><span class="dc-status status-standby" id="stat-beacon">STANDBY</span></div>
-      <div class="dc-name">Beacon</div>
-      <div class="dc-count" id="cnt-beacon">News &amp; RSS Feeds</div>
-    </a>
-    <a href="/market-desk" class="desk-card dc-mkt">
-      <div class="dc-header"><span class="dc-icon">📊</span><span class="dc-status status-standby" id="stat-market">STANDBY</span></div>
-      <div class="dc-name">Market</div>
-      <div class="dc-count" id="cnt-market">Model vs Market</div>
-    </a>
-    <a href="/orderflow" class="desk-card dc-of">
-      <div class="dc-header"><span class="dc-icon">📈</span><span class="dc-status status-standby" id="stat-of">STANDBY</span></div>
-      <div class="dc-name">OrderFlow</div>
-      <div class="dc-count" id="cnt-of">Bid/Ask Depth</div>
-    </a>
+  <!-- Command Intelligence Panel -->
+  <div class="cmd-panel">
+    <div class="cmd-panel-header">
+      <div class="cmd-panel-title">⚡ <span>COMMAND</span> INTELLIGENCE — Iran Boots on Ground Market</div>
+      <div class="cmd-status-pill" id="cmdStatusPill">
+        <span class="live-dot"></span><span id="cmdAlertText">LOADING</span>
+      </div>
+    </div>
+
+    <div class="cmd-panel-body">
+      <!-- Verdict column -->
+      <div class="cmd-verdict">
+        <div class="cmd-verdict-badge verdict-hold" id="cmdVerdictBadge">LOADING</div>
+        <div class="cmd-odds-est" id="cmdOddsEst">—</div>
+        <div class="cmd-odds-label">model estimate</div>
+      </div>
+
+      <!-- Details column -->
+      <div class="cmd-details">
+        <div class="cmd-metrics">
+          <div class="cmd-metric">
+            <div class="cmd-metric-label">Market Price</div>
+            <div class="cmd-metric-value blue" id="cmdMarketPrice">—</div>
+          </div>
+          <div class="cmd-metric">
+            <div class="cmd-metric-label">Our Edge</div>
+            <div class="cmd-metric-value" id="cmdEdge">—</div>
+          </div>
+          <div class="cmd-metric">
+            <div class="cmd-metric-label">Confidence</div>
+            <div class="cmd-metric-value" id="cmdConf">—</div>
+          </div>
+          <div class="cmd-metric">
+            <div class="cmd-metric-label">OB Bias</div>
+            <div class="cmd-metric-value" id="cmdOBBias">—</div>
+          </div>
+          <div class="cmd-metric">
+            <div class="cmd-metric-label">Signals (24h)</div>
+            <div class="cmd-metric-value" id="cmdSigCount">—</div>
+          </div>
+          <div class="cmd-metric">
+            <div class="cmd-metric-label">Convergence</div>
+            <div class="cmd-metric-value" id="cmdConv">—</div>
+          </div>
+        </div>
+        <div class="cmd-reason" id="cmdReason">Aggregating intelligence from all desks...</div>
+      </div>
+    </div>
+
+    <!-- Desk links -->
+    <div class="cmd-desk-links">
+      <span style="font-size:11px;color:var(--muted);align-self:center;margin-right:4px">Intel Desks →</span>
+      <a href="/pulse"      class="cmd-desk-link cdl-pulse">  🕵️ Pulse   <span class="cdl-count" id="cdl-pulse">—</span></a>
+      <a href="/beacon"     class="cmd-desk-link cdl-beacon"> 📡 Beacon  <span class="cdl-count" id="cdl-beacon">—</span></a>
+      <a href="/market-desk"class="cmd-desk-link cdl-market"> 📊 Market  <span class="cdl-count" id="cdl-market">—</span></a>
+      <a href="/orderflow"  class="cmd-desk-link cdl-of">     📈 OrderFlow <span class="cdl-count" id="cdl-of">—</span></a>
+    </div>
   </div>
 
   <!-- Action buttons -->
@@ -367,6 +491,124 @@
     </div>
 
   </div>
+
+  <!-- Algorithm Explainer -->
+  <div class="algo-section">
+    <div class="algo-header" onclick="toggleAlgo()">
+      <h2>⚙ How We Calculate The <span>Recommendation</span> — Full Algorithm Breakdown</h2>
+      <span class="algo-toggle" id="algoToggleIcon">▼ Show</span>
+    </div>
+    <div class="algo-body" id="algoBody">
+
+      <div class="algo-section-title">Overview</div>
+      <p>The system runs a <strong>multi-layer intelligence pipeline</strong> every 2 minutes, aggregating signals from four independent desks: Twitter/X monitoring (Pulse), news feed scanning (Beacon), Polymarket price/volume analysis (Market), and live order book data (OrderFlow). Each desk produces signals with a direction (YES-leaning or NO-leaning), a confidence score (0–100), and an importance score (0–100). The Command module combines all active signals into a single probability estimate and a clear bet recommendation.</p>
+
+      <div class="algo-section-title">Step 1 — Signal Collection &amp; Filtering</div>
+      <p>Signals are stored for a rolling <strong>72-hour window</strong>. Before aggregation, stale signals are down-weighted. Only signals with an importance score ≥ 28 are retained for the final roll-up. Each signal carries:</p>
+      <table class="algo-weight-table">
+        <thead><tr><th>Field</th><th>Meaning</th><th>Range</th></tr></thead>
+        <tbody>
+          <tr><td><strong>signal_direction</strong></td><td>bullish (YES) / bearish (NO) / neutral</td><td>enum</td></tr>
+          <tr><td><strong>confidence_score</strong></td><td>How certain we are about this signal's direction</td><td>0–100</td></tr>
+          <tr><td><strong>importance_score</strong></td><td>How significant this signal is for the outcome</td><td>0–100</td></tr>
+          <tr><td><strong>probability_impact_estimate</strong></td><td>Estimated pp shift on YES price (positive = higher, negative = lower)</td><td>−15 to +15</td></tr>
+        </tbody>
+      </table>
+
+      <div class="algo-section-title">Step 2 — Desk Signal Weights</div>
+      <p>Each desk has a <strong>base credibility weight</strong> that scales how much its signals influence the final estimate. These reflect the inherent reliability and latency of each data source:</p>
+      <table class="algo-weight-table">
+        <thead><tr><th>Desk</th><th>Source</th><th>Base Weight</th><th>Visual</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>📊 <strong>Market</strong></td>
+            <td>Polymarket price, momentum, volume, trade flow</td>
+            <td>0.40 (40%)</td>
+            <td><span class="wt-bar" style="width:80px;background:var(--green)"></span></td>
+          </tr>
+          <tr>
+            <td>📈 <strong>OrderFlow</strong></td>
+            <td>Live bid/ask depth, proximity-weighted imbalance</td>
+            <td>0.30 (30%)</td>
+            <td><span class="wt-bar" style="width:60px;background:var(--yellow)"></span></td>
+          </tr>
+          <tr>
+            <td>📡 <strong>Beacon</strong></td>
+            <td>GDELT news events, RSS feeds, credibility scoring</td>
+            <td>0.20 (20%)</td>
+            <td><span class="wt-bar" style="width:40px;background:var(--blue)"></span></td>
+          </tr>
+          <tr>
+            <td>🕵️ <strong>Pulse</strong></td>
+            <td>Twitter/X search + priority account timelines</td>
+            <td>0.10 (10%)</td>
+            <td><span class="wt-bar" style="width:20px;background:var(--purple)"></span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Within each desk, individual signals are further weighted by their <strong>importance_score</strong>. Higher-importance signals from verified/official sources pull the estimate more strongly.</p>
+
+      <div class="algo-section-title">Step 3 — Probability Aggregation Formula</div>
+      <p>Starting from the raw Polymarket YES price as the anchor, the model computes a weighted adjustment:</p>
+      <div class="algo-formula">final_prob = market_price + Σ( signal.probability_impact × (signal.importance / 100) × desk_weight )
+
+Normalised to [0.01, 0.99] to prevent extreme values.</div>
+      <p>The <strong>confidence</strong> of the final estimate is derived from the degree of convergence across desks — if all four desks point the same direction, confidence is high. If desks disagree, confidence is reduced proportionally.</p>
+
+      <div class="algo-section-title">Step 4 — Order Book Proximity Weighting</div>
+      <p>Raw bid/ask dollar depth is misleading if most orders are far from the mid-price. We apply a <strong>proximity discount</strong> so that a $1,000 ask at 99¢ is nearly worthless when the mid-price is 8¢, while a $1,000 ask at 9¢ counts nearly in full:</p>
+      <div class="algo-formula">proximity_weight(price) = max(0,  1 − |price − mid| × 2)
+
+Examples when mid = 8¢:
+  ask at  9¢  →  weight = max(0, 1 − |0.09 − 0.08| × 2) = 0.98  (near full weight)
+  ask at 20¢  →  weight = max(0, 1 − |0.20 − 0.08| × 2) = 0.76
+  ask at 50¢  →  weight = max(0, 1 − |0.50 − 0.08| × 2) = 0.16
+  ask at 99¢  →  weight = max(0, 1 − |0.99 − 0.08| × 2) = 0.00  (zero weight)</div>
+      <p>Weighted bid depth vs weighted ask depth then determines the <strong>order book bias</strong> signal fed into the final estimate.</p>
+
+      <div class="algo-section-title">Step 5 — Pulse Author Credibility Scoring</div>
+      <p>Not all tweets are equal. Each tweet author is scored 0–100 based on three factors:</p>
+      <table class="algo-weight-table">
+        <thead><tr><th>Factor</th><th>Boost</th><th>Logic</th></tr></thead>
+        <tbody>
+          <tr><td>Pre-known account tier</td><td>38–95 base</td><td>DoD/CENTCOM/POTUS = 95; Reuters/AP = 88; OSINT analysts = 65–72; unknown = 45</td></tr>
+          <tr><td>Follower count</td><td>+0 to +37</td><td>5M+ followers floors score at 82; 100K+ at 63; &lt;10K no boost</td></tr>
+          <tr><td>Blue verified badge</td><td>+8</td><td>Capped at 95</td></tr>
+          <tr><td>Official bio keywords</td><td>+5 or +10</td><td>"general", "pentagon", "minister", "department" etc. in bio description</td></tr>
+        </tbody>
+      </table>
+      <p>Tweets from <strong>official sources</strong> (credibility ≥ 85) carry ~8× the weight of unverified accounts. A single tweet from @DeptofDefense about Iran can shift the estimate more than 50 tweets from random accounts.</p>
+
+      <div class="algo-section-title">Step 6 — Beacon Source Credibility</div>
+      <p>News articles from GDELT and RSS feeds are scored by domain. Headlines from Reuters, AP, BBC, NYT anchor at high credibility. GDELT tone scores (−100 to +100, where −100 is maximally negative/conflict) are mapped to probability impact. A GDELT tone of −10 on a CENTCOM article raises the YES probability significantly; a tone of +5 on a press-release domain barely moves it.</p>
+
+      <div class="algo-section-title">Step 7 — Bet YES / Bet NO / Hold Decision</div>
+      <p>After computing <strong>final_prob</strong> and comparing it to the live market price, the system issues a recommendation:</p>
+      <table class="algo-weight-table">
+        <thead><tr><th>Condition</th><th>Recommendation</th><th>Logic</th></tr></thead>
+        <tbody>
+          <tr><td>final_prob &gt; market_price + 3pp AND confidence ≥ 55</td><td><strong style="color:var(--green)">BET YES</strong></td><td>Model sees YES as underpriced — buy YES shares</td></tr>
+          <tr><td>final_prob &lt; market_price − 3pp AND confidence ≥ 55</td><td><strong style="color:var(--red)">BET NO</strong></td><td>Model sees YES as overpriced — buy NO shares</td></tr>
+          <tr><td>|final_prob − market_price| &lt; 3pp OR confidence &lt; 55</td><td><strong style="color:var(--muted)">HOLD / MONITOR</strong></td><td>Edge is within noise; wait for clearer signal</td></tr>
+        </tbody>
+      </table>
+      <p>The 3pp threshold prevents over-trading on small noise. As confidence grows (more convergent signals), the threshold effectively shrinks because the estimate becomes more trustworthy. In URGENT mode (multiple high-importance escalation signals from official sources), the system lowers the threshold to 2pp and flags the alert level.</p>
+
+      <div class="algo-section-title">Step 8 — Alert Levels</div>
+      <p>The alert level summarises the overall signal environment, independent of the bet direction:</p>
+      <table class="algo-weight-table">
+        <thead><tr><th>Level</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><strong class="alert-URGENT">URGENT</strong></td><td>High-importance signals from official/verified sources pointing to imminent escalation. Maximum confidence. War room mode.</td></tr>
+          <tr><td><strong class="alert-IMPORTANT">IMPORTANT</strong></td><td>Multiple corroborating signals from semi-confirmed sources. Elevated attention warranted.</td></tr>
+          <tr><td><strong class="alert-DIGEST">DIGEST</strong></td><td>Normal signal flow. Background intelligence gathering active, no immediate edge.</td></tr>
+          <tr><td><strong class="alert-NO_ACTION">NO ACTION</strong></td><td>Insufficient signals or all desks quiet. Model defers to market price.</td></tr>
+        </tbody>
+      </table>
+
+    </div><!-- /algo-body -->
+  </div><!-- /algo-section -->
+
 </div>
 
 <script>
@@ -854,20 +1096,101 @@ async function refineWeights() {
   } catch(e) { alert('Error (need ≥3 resolved predictions): ' + e.message); }
 }
 
-async function loadIntelStatus() {
+async function loadCommandIntel() {
   try {
-    const d = await fetch('/api/command/status').then(r=>r.json());
-    const apps = d.apps || {};
-    const counts = d.signal_counts_1h || {};
-    const map = {pulse:'pulse', beacon:'beacon', market:'market', orderflow:'of'};
-    for (const [key, short] of Object.entries(map)) {
-      const st = document.getElementById('stat-'+short);
-      const ct = document.getElementById('cnt-'+short);
-      const active = apps[key] === 'active';
-      if (st) { st.textContent = active ? 'ACTIVE' : 'STANDBY'; st.className = 'dc-status ' + (active ? 'status-active' : 'status-standby'); }
-      if (ct) ct.textContent = (counts[key] || 0) + ' signals this hour';
+    // Load command state + analysis in parallel
+    const [state, analysis, status] = await Promise.all([
+      fetch('/api/command/state').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/analysis/iran').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/command/status').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+
+    // ── Verdict & odds ──────────────────────────────────────────────
+    const marketPrice = state?.market_odds ?? analysis?.signals?.market_price ?? null;
+    const modelEst    = analysis?.prediction?.predicted_yes_prob ?? null;
+    const confidence  = analysis?.prediction?.confidence ?? null;
+    const houseOdds   = state?.house_odds ?? null;
+
+    const estPct = modelEst != null ? (modelEst * 100) : (houseOdds ?? null);
+    const mktPct  = marketPrice != null ? (marketPrice * 100) : null;
+    const edge    = (estPct != null && mktPct != null) ? (estPct - mktPct) : null;
+    const confVal = confidence != null ? confidence * 100 : null;
+
+    // Verdict logic: need ≥3pp edge and reasonable confidence
+    let verdict = 'HOLD';
+    let verdictClass = 'verdict-hold';
+    if (edge != null && confVal != null && confVal >= 40) {
+      if (edge > 3)       { verdict = '▲ BET YES'; verdictClass = 'verdict-yes'; }
+      else if (edge < -3) { verdict = '▼ BET NO';  verdictClass = 'verdict-no';  }
     }
-  } catch(e) {}
+
+    const vBadge = document.getElementById('cmdVerdictBadge');
+    vBadge.textContent = verdict;
+    vBadge.className = 'cmd-verdict-badge ' + verdictClass;
+
+    document.getElementById('cmdOddsEst').textContent =
+      estPct != null ? estPct.toFixed(1) + '%' : '—';
+    document.getElementById('cmdOddsEst').style.color =
+      verdictClass === 'verdict-yes' ? 'var(--green)' :
+      verdictClass === 'verdict-no'  ? 'var(--red)'   : 'var(--text)';
+
+    // ── Metrics ─────────────────────────────────────────────────────
+    const mktEl = document.getElementById('cmdMarketPrice');
+    mktEl.textContent = mktPct != null ? mktPct.toFixed(1) + '%' : '—';
+
+    const edgeEl = document.getElementById('cmdEdge');
+    if (edge != null) {
+      edgeEl.textContent = (edge >= 0 ? '+' : '') + edge.toFixed(1) + 'pp';
+      edgeEl.style.color = edge > 2 ? 'var(--green)' : edge < -2 ? 'var(--red)' : 'var(--muted)';
+    }
+
+    const confEl = document.getElementById('cmdConf');
+    if (confVal != null) {
+      confEl.textContent = confVal.toFixed(0) + '%';
+      confEl.style.color = confVal >= 70 ? 'var(--green)' : confVal >= 45 ? 'var(--yellow)' : 'var(--muted)';
+    }
+
+    const biasRaw = state?.orderbook_bias ?? 'neutral';
+    const biasEl = document.getElementById('cmdOBBias');
+    biasEl.textContent = biasRaw.toUpperCase();
+    biasEl.style.color = biasRaw === 'bullish' ? 'var(--green)' : biasRaw === 'bearish' ? 'var(--red)' : 'var(--muted)';
+
+    const convEl = document.getElementById('cmdConv');
+    const conv = state?.convergence;
+    convEl.textContent = conv ? '✓ YES' : '✗ NO';
+    convEl.style.color = conv ? 'var(--green)' : 'var(--muted)';
+
+    // ── Alert level & status pill ────────────────────────────────────
+    const alertLevel = state?.alert_level ?? 'NO_ACTION';
+    const alertEl = document.getElementById('cmdAlertText');
+    alertEl.textContent = alertLevel.replace('_', ' ');
+    alertEl.className = 'alert-' + alertLevel;
+
+    // ── Reason text ─────────────────────────────────────────────────
+    const reason = state?.reason_summary ?? analysis?.prediction?.reasoning ?? '';
+    const betDir = verdictClass === 'verdict-yes' ? '▲ BET YES' :
+                   verdictClass === 'verdict-no'  ? '▼ BET NO'  : 'HOLD — monitor';
+    document.getElementById('cmdReason').innerHTML =
+      `<strong>${betDir}:</strong> ${reason || 'Aggregating intelligence from all desks…'}`;
+
+    // ── Signal counts (desk links) ────────────────────────────────────
+    const counts = status?.signal_counts_1h ?? {};
+    const totalSigs = Object.values(counts).reduce((s, v) => s + v, 0);
+    document.getElementById('cmdSigCount').textContent = totalSigs + ' this hour';
+    const deskMap = { pulse: 'cdl-pulse', beacon: 'cdl-beacon', market: 'cdl-market', orderflow: 'cdl-of' };
+    for (const [key, elId] of Object.entries(deskMap)) {
+      const el = document.getElementById(elId);
+      if (el) el.textContent = '(' + (counts[key] || 0) + ')';
+    }
+
+  } catch(e) { console.error('command intel', e); }
+}
+
+function toggleAlgo() {
+  const body = document.getElementById('algoBody');
+  const icon = document.getElementById('algoToggleIcon');
+  const open = body.classList.toggle('open');
+  icon.textContent = open ? '▲ Hide' : '▼ Show';
 }
 
 async function refreshAll() {
@@ -880,7 +1203,7 @@ async function refreshAll() {
     loadPredictions(),
     loadPerformance(),
     loadOBHistory(),
-    loadIntelStatus(),
+    loadCommandIntel(),
   ]);
   document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
