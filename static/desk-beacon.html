@@ -56,6 +56,19 @@
     .score-i{background:rgba(249,115,22,.1);color:var(--orange);padding:1px 6px;border-radius:3px}
     .impact-pos{color:var(--green)}.impact-neg{color:var(--red)}
     .empty{color:var(--muted);font-size:13px;text-align:center;padding:48px}
+    /* Chat box */
+    .chat-card{background:var(--surface);border:1px solid rgba(59,130,246,.4);border-radius:8px;padding:16px 18px;margin-bottom:20px}
+    .chat-card h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--blue);margin-bottom:12px}
+    .chat-input-row{display:flex;gap:8px}
+    .chat-input{flex:1;background:#060a0f;border:1px solid var(--border);color:var(--text);padding:9px 14px;border-radius:6px;font-size:13px;font-family:'Courier New',monospace;outline:none;transition:border-color .2s}
+    .chat-input:focus{border-color:var(--blue)}
+    .chat-send{background:var(--blue);border:none;color:#fff;padding:9px 18px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+    .chat-send:hover{opacity:.85}.chat-send:disabled{opacity:.4;cursor:not-allowed}
+    .chat-answer{margin-top:14px;padding:12px 14px;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:6px;font-size:13px;line-height:1.8;display:none}
+    .chat-matches{margin-top:10px;font-size:11px;color:var(--muted)}
+    .chat-match-card{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-top:6px}
+    .chat-match-headline{font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px}
+    .chat-match-src{font-size:10px;color:var(--blue)}
     ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
   </style>
 </head>
@@ -78,6 +91,17 @@
 </nav>
 
 <div class="container">
+
+  <!-- News Chat Box -->
+  <div class="chat-card">
+    <h2>💬 Ask the News — Query All Collected Articles</h2>
+    <div class="chat-input-row">
+      <input class="chat-input" id="chatInput" type="text" placeholder="e.g. Are there any reports of troop movements? What is the diplomatic situation?" onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="chat-send" id="chatSend" onclick="sendChat()">Ask →</button>
+    </div>
+    <div class="chat-answer" id="chatAnswer"></div>
+    <div class="chat-matches" id="chatMatches"></div>
+  </div>
 
   <div class="stats-row">
     <div class="stat"><div class="lbl">Articles</div><div class="val" id="sTotal">—</div><div class="sub">total signals</div></div>
@@ -266,6 +290,49 @@ function renderFeed() {
     </div>`;
   }).join('');
   document.getElementById('articleFeed').innerHTML = html;
+}
+
+async function sendChat() {
+  const q = document.getElementById('chatInput').value.trim();
+  if (!q) return;
+  const btn = document.getElementById('chatSend');
+  const ansEl = document.getElementById('chatAnswer');
+  const matchEl = document.getElementById('chatMatches');
+  btn.disabled = true; btn.textContent = 'Searching...';
+  ansEl.style.display = 'none'; matchEl.innerHTML = '';
+  try {
+    const r = await fetch('/api/beacon/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: q})
+    });
+    const d = await r.json();
+    ansEl.style.display = 'block';
+    ansEl.innerHTML = d.answer || 'No answer generated.';
+    if (d.articles && d.articles.length) {
+      matchEl.innerHTML = `<strong style="color:var(--text)">${d.articles.length} relevant article${d.articles.length!==1?'s':''} found:</strong>`;
+      d.articles.slice(0,6).forEach(a => {
+        const src = extractSource(a.reasoning);
+        const ts = new Date(a.timestamp).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+        const linkHtml = a.link ? `<a class="art-link" href="${esc(a.link)}" target="_blank" rel="noopener" style="font-size:10px">↗ read</a>` : '';
+        matchEl.innerHTML += `<div class="chat-match-card">
+          <div class="chat-match-headline">${esc(a.headline||'')}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
+            <span class="chat-match-src">${esc(src)}</span>
+            <span style="font-size:10px;color:var(--muted)">${ts}</span>
+            <span class="pill pill-${a.signal_direction}" style="font-size:9px;padding:1px 6px">${a.signal_direction}</span>
+            ${linkHtml}
+          </div>
+        </div>`;
+      });
+    } else {
+      matchEl.innerHTML = '<span style="color:var(--muted);font-size:11px">No articles matched that query in the current window.</span>';
+    }
+  } catch(e) {
+    ansEl.style.display = 'block';
+    ansEl.innerHTML = '<span style="color:var(--red)">Error querying news. Check server logs.</span>';
+  }
+  btn.disabled = false; btn.textContent = 'Ask →';
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

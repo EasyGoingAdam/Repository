@@ -54,6 +54,17 @@
     .bar-bid{right:0;background:var(--green)}.bar-ask{left:0;background:var(--red)}
     .bar-txt{position:relative;z-index:1}
 
+    /* Weighted comparison */
+    .weight-compare{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:14px}
+    .wc-side{text-align:center;padding:12px;border-radius:8px}
+    .wc-bid{background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2)}
+    .wc-ask{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2)}
+    .wc-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+    .wc-val{font-size:26px;font-weight:900}
+    .wc-sub{font-size:11px;color:var(--muted);margin-top:3px}
+    .wc-vs{text-align:center;font-size:11px;color:var(--muted)}
+    .weight-note{font-size:11px;color:var(--muted);background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);border-radius:6px;padding:8px 12px;margin-bottom:12px;line-height:1.6}
+
     /* Chart */
     .chart-wrap{position:relative;height:200px}
 
@@ -132,9 +143,39 @@
     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
       <span id="imbalBidPct">—</span><span id="imbalAskPct">—</span>
     </div>
+
+    <!-- Proximity-weighted comparison -->
+    <div class="weight-note" style="margin-top:14px">
+      ⚖️ <strong>Proximity Weighting:</strong> Orders closer to mid-price carry more signal weight.
+      Formula: <code>w = max(0, 1 − |price − mid| × 2)</code> — a bid 1¢ from mid ≈ 98% weight; a bid at 99¢ when mid is 50¢ ≈ 0%.
+    </div>
+    <div class="weight-compare">
+      <div class="wc-side wc-bid">
+        <div class="wc-label" style="color:var(--green)">Weighted Bid $</div>
+        <div class="wc-val" style="color:var(--green)" id="wBidDepth">—</div>
+        <div class="wc-sub" id="wBidDelta">vs raw: —</div>
+      </div>
+      <div class="wc-vs">
+        <div style="font-size:16px;font-weight:700;margin:4px 0" id="wVerdict">—</div>
+        <div id="wVerdictSub" style="font-size:10px;color:var(--muted)">proximity-adjusted</div>
+      </div>
+      <div class="wc-side wc-ask">
+        <div class="wc-label" style="color:var(--red)">Weighted Ask $</div>
+        <div class="wc-val" style="color:var(--red)" id="wAskDepth">—</div>
+        <div class="wc-sub" id="wAskDelta">vs raw: —</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px">
+      <span style="color:var(--green)">Bids (proximity-weighted)</span><span style="color:var(--red)">Asks (proximity-weighted)</span>
+    </div>
+    <div class="imbal-track">
+      <div class="imbal-bid" id="wImbalBid" style="width:50%"></div>
+      <div class="imbal-ask" id="wImbalAsk" style="width:50%"></div>
+    </div>
+
     <div style="max-height:240px;overflow-y:auto;margin-top:14px">
       <table class="ob-table">
-        <thead><tr><th>Price</th><th>Bid $</th><th>Ask $</th><th style="width:80px">Depth</th></tr></thead>
+        <thead><tr><th>Price</th><th>Bid $</th><th>Ask $</th><th>Weight</th><th style="width:70px">Depth</th></tr></thead>
         <tbody id="obBody"></tbody>
       </table>
     </div>
@@ -229,8 +270,30 @@ async function loadLiveOB() {
     document.getElementById('imbalBidPct').textContent = bidPct.toFixed(1)+'% bids';
     document.getElementById('imbalAskPct').textContent = askPct.toFixed(1)+'% asks';
 
-    // OB table
+    // Proximity-weighted depth
     const mid = ((d.best_bid||0.5)+(d.best_ask||0.5))/2;
+    function proximityWeight(price) { return Math.max(0, 1 - Math.abs(price - mid) * 2); }
+    const wBid = (d.bids||[]).reduce((s,b)=>{ const w=proximityWeight(b.price); return s + (b.notional||b.size*b.price) * w; }, 0);
+    const wAsk = (d.asks||[]).reduce((s,a)=>{ const w=proximityWeight(a.price); return s + (a.notional||a.size*a.price) * w; }, 0);
+    const wTot = wBid + wAsk || 1;
+    const wBidPct = wBid/wTot*100, wAskPct = wAsk/wTot*100;
+    document.getElementById('wBidDepth').textContent = fmtMoney(wBid);
+    document.getElementById('wAskDepth').textContent = fmtMoney(wAsk);
+    document.getElementById('wBidDelta').textContent = `${wBidPct.toFixed(1)}% of weighted book`;
+    document.getElementById('wAskDelta').textContent = `${wAskPct.toFixed(1)}% of weighted book`;
+    document.getElementById('wImbalBid').style.width = wBidPct+'%';
+    document.getElementById('wImbalAsk').style.width = wAskPct+'%';
+    const wImbal = (wBid - wAsk) / wTot;
+    const wV = document.getElementById('wVerdict');
+    const wVS = document.getElementById('wVerdictSub');
+    if (wImbal > 0.2)        { wV.textContent='▲ Buy pressure'; wV.style.color='var(--green)'; wVS.textContent='weighted bids dominant'; }
+    else if (wImbal > 0.06)  { wV.textContent='↑ Mild buy bias'; wV.style.color='var(--green)'; wVS.textContent='proximity-adjusted'; }
+    else if (wImbal < -0.2)  { wV.textContent='▼ Sell pressure'; wV.style.color='var(--red)'; wVS.textContent='weighted asks dominant'; }
+    else if (wImbal < -0.06) { wV.textContent='↓ Mild sell bias'; wV.style.color='var(--red)'; wVS.textContent='proximity-adjusted'; }
+    else                     { wV.textContent='↔ Balanced'; wV.style.color='var(--muted)'; wVS.textContent='proximity-adjusted'; }
+
+    // OB table (now with weight column)
+
     const maxSz = Math.max(...(d.bids||[]).map(b=>b.size),...(d.asks||[]).map(a=>a.size),1);
     const levels = [];
     (d.bids||[]).forEach(b=>levels.push({price:b.price,bid:b.size,ask:0,not:b.notional}));
@@ -243,11 +306,16 @@ async function loadLiveOB() {
         midDone=true;
       }
       const pct=Math.round(Math.max(l.bid,l.ask)/maxSz*100);
+      const w = proximityWeight(l.price);
+      const wPctStr = (w*100).toFixed(0)+'%';
+      const wCol = w > 0.7 ? 'var(--green)' : w > 0.3 ? 'var(--yellow)' : 'var(--red)';
       if(l.bid>0){
         rows+=`<tr class="bid-row"><td>${(l.price*100).toFixed(2)}¢</td><td>$${l.bid.toLocaleString('en',{maximumFractionDigits:0})}</td><td></td>
+          <td style="text-align:right;color:${wCol};font-weight:700">${wPctStr}</td>
           <td class="bar-rel"><div class="bar-bg bar-bid" style="width:${pct}%"></div><span class="bar-txt">${fmtMoney(l.not)}</span></td></tr>`;
       } else {
         rows+=`<tr class="ask-row"><td>${(l.price*100).toFixed(2)}¢</td><td></td><td>$${l.ask.toLocaleString('en',{maximumFractionDigits:0})}</td>
+          <td style="text-align:right;color:${wCol};font-weight:700">${wPctStr}</td>
           <td class="bar-rel"><div class="bar-bg bar-ask" style="width:${pct}%"></div><span class="bar-txt">${fmtMoney(l.not)}</span></td></tr>`;
       }
     }

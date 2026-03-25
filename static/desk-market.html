@@ -131,6 +131,12 @@
     </div>
   </div>
 
+  <!-- Why This Edge? -->
+  <div class="card" id="edgeCard" style="margin-bottom:16px">
+    <h2>🔍 Why This Edge? — Signal-by-Signal Breakdown</h2>
+    <div id="edgeBreakdown"><div class="empty">Loading analysis...</div></div>
+  </div>
+
   <!-- Market signals feed -->
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -212,6 +218,9 @@ async function loadMarket() {
     else                verdict = `⚪ <strong>Market fairly priced.</strong> Model and market within ±2pp — no clear edge.`;
     document.getElementById('edgeVerdict').innerHTML = verdict;
 
+    // Edge breakdown
+    renderEdgeBreakdown(ana);
+
     // Signal breakdown table
     const s = ana.signals;
     const rows = [
@@ -281,6 +290,80 @@ async function loadSignals() {
       </div>`;
     }).join('');
   } catch(e) { console.error('signals', e); }
+}
+
+function renderEdgeBreakdown(ana) {
+  const el = document.getElementById('edgeBreakdown');
+  const s = ana.signals || {};
+  const w = {
+    market_price: 0.55, momentum: 0.10, volume_conviction: 0.08,
+    liquidity_quality: 0.07, time_decay: 0.08, orderbook_imbalance: 0.07, trade_flow: 0.05
+  };
+
+  const marketP = ana.prediction.predicted_yes_prob;
+  const mktPrice = s.market_price || 0;
+  const edge = (marketP - mktPrice) * 100;
+
+  // Compute each signal's contribution to the net adjustment
+  const volScore = s.volume_score  != null ? s.volume_score  : (s.volume_usd  ? Math.min(s.volume_usd  / 1e6, 1) : 0);
+  const liqScore = s.liquidity_score != null ? s.liquidity_score : (s.liquidity_usd ? Math.min(s.liquidity_usd / 100000, 1) : 0);
+
+  const contributions = [
+    { name: 'Price Momentum',         key: 'momentum',           contrib: w.momentum * (s.momentum||0) * 0.1,           val: s.momentum,          fmt: v=>v!=null?(v>0?'+':'')+v.toFixed(3):'—', desc: 'Recent price trend direction (positive=rising)' },
+    { name: 'Order Book Imbalance',   key: 'orderbook_imbalance',contrib: w.orderbook_imbalance * (s.orderbook_imbalance||0) * 0.05, val: s.orderbook_imbalance, fmt: v=>v!=null?(v>0?'+':'')+v.toFixed(3):'—', desc: 'Bid vs ask pressure (positive=more buy orders)' },
+    { name: 'Trade Flow',             key: 'trade_flow',         contrib: w.trade_flow * (s.trade_flow||0) * 0.05,       val: s.trade_flow,        fmt: v=>v!=null?(v>0?'+':'')+v.toFixed(3):'—', desc: 'Net buying vs selling of YES tokens' },
+    { name: 'Volume Conviction',      key: 'volume_conviction',  contrib: w.volume_conviction * (volScore - 0.5) * 0.05, val: volScore,            fmt: v=>v!=null?(v*100).toFixed(1)+'%':'—',  desc: 'High volume = more confidence in market price' },
+    { name: 'Liquidity Quality',      key: 'liquidity_quality',  contrib: w.liquidity_quality * (liqScore - 0.5) * 0.05, val: liqScore,            fmt: v=>v!=null?(v*100).toFixed(1)+'%':'—',  desc: 'Deep book = less manipulation risk' },
+    { name: 'Time to Resolution',     key: 'time_decay',         contrib: w.time_decay * (s.time_signal||0) * 0.05,     val: s.time_signal,       fmt: v=>v!=null?v.toFixed(3):'—',            desc: 'Closer to Dec 31 = more reliable market signal' },
+  ].sort((a,b) => Math.abs(b.contrib) - Math.abs(a.contrib));
+
+  const maxAbs = Math.max(...contributions.map(c => Math.abs(c.contrib)), 0.0001);
+
+  let rows = contributions.map(c => {
+    const pct = (Math.abs(c.contrib) / maxAbs * 100).toFixed(0);
+    const dir = c.contrib > 0.0005 ? 'YES ↑' : c.contrib < -0.0005 ? 'NO ↓' : 'neutral';
+    const col = c.contrib > 0.0005 ? 'var(--green)' : c.contrib < -0.0005 ? 'var(--red)' : 'var(--muted)';
+    const barCol = c.contrib > 0 ? 'var(--green)' : 'var(--red)';
+    const pp = (c.contrib * 100).toFixed(2);
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <span style="width:160px;flex-shrink:0;font-size:12px;color:var(--muted)">${c.name}</span>
+        <span style="width:60px;flex-shrink:0;font-size:12px;font-family:monospace;color:var(--text)">${c.fmt(c.val)}</span>
+        <div style="flex:1;background:var(--border);border-radius:3px;height:6px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${barCol};border-radius:3px;transition:width .5s"></div>
+        </div>
+        <span style="width:56px;flex-shrink:0;text-align:right;font-size:11px;color:${col}">${pp}pp</span>
+        <span style="width:56px;flex-shrink:0;text-align:right;font-size:10px;color:${col};font-weight:700">${dir}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted);padding-left:170px">${c.desc}</div>
+    </div>`;
+  }).join('');
+
+  // Plain-English verdict
+  const topPullers = contributions.filter(c => c.contrib < -0.0005).map(c => c.name);
+  const topBulls   = contributions.filter(c => c.contrib >  0.0005).map(c => c.name);
+  let verdict = '';
+  if (edge < -3) {
+    verdict = `<div style="margin-top:16px;padding:12px 14px;background:rgba(248,81,73,.07);border:1px solid rgba(248,81,73,.25);border-radius:6px;font-size:13px;line-height:1.8">
+      🔴 <strong style="color:var(--red)">Strong NO edge (${edge.toFixed(1)}pp below market).</strong><br>
+      The model sees the market as overpriced. Key reasons:<br>
+      ${topPullers.length ? `<span style="color:var(--muted)">• Pulling toward NO: <strong>${topPullers.join(', ')}</strong></span><br>` : ''}
+      ${topBulls.length   ? `<span style="color:var(--muted)">• Partial offset (YES): <strong>${topBulls.join(', ')}</strong></span><br>` : ''}
+      <span style="color:var(--muted)">• Market price (${(mktPrice*100).toFixed(1)}%) carries 55% of total model weight — the gap must be overcome by signal strength to flip direction.</span>
+    </div>`;
+  } else if (edge > 3) {
+    verdict = `<div style="margin-top:16px;padding:12px 14px;background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.25);border-radius:6px;font-size:13px;line-height:1.8">
+      🟢 <strong style="color:var(--green)">YES edge (+${edge.toFixed(1)}pp above market).</strong><br>
+      Model signals collectively push above the market price.<br>
+      ${topBulls.length   ? `<span style="color:var(--muted)">• Driving YES: <strong>${topBulls.join(', ')}</strong></span><br>` : ''}
+    </div>`;
+  } else {
+    verdict = `<div style="margin-top:16px;padding:12px 14px;background:rgba(139,148,158,.06);border:1px solid var(--border);border-radius:6px;font-size:13px">
+      ⚪ <strong>Fairly priced</strong> — signals net within ±3pp of market. No clear exploitable edge.
+    </div>`;
+  }
+
+  el.innerHTML = rows + verdict;
 }
 
 async function loadAll() {

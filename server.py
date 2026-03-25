@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -68,9 +69,8 @@ def _intel_loop():
             if int(time.time()) % 600 < 120:
                 run_beacon_cycle()
 
-            # Twitter (Pulse) every 5 minutes if key present
-            if int(time.time()) % 300 < 120:
-                run_pulse_cycle()
+            # Twitter (Pulse) every cycle (~2 min) if key present
+            run_pulse_cycle()
 
             # Command aggregation every 2 minutes
             run_command_cycle()
@@ -296,6 +296,115 @@ def get_orderbook_history(hours: int = 24, range: float = 0.10):
         })
 
     return {"snapshots": result, "count": len(result), "range": range}
+
+
+class ChatRequest(BaseModel):
+    question: str
+
+
+@app.post("/api/beacon/chat")
+def beacon_chat(req: ChatRequest):
+    """
+    Search all collected beacon (news) signals for articles relevant to the question.
+    Keyword-matches against headline + raw_text, returns top matches + a synthesized answer.
+    """
+    import re as _re
+    question = req.question.lower().strip()
+    if not question:
+        return {"answer": "Please enter a question.", "articles": [], "matches": 0}
+
+    signals = get_recent_signals(hours=72, source="beacon", limit=500)
+
+    stop = {"the","a","an","is","are","was","were","what","how","when","where","why",
+            "do","does","did","and","or","but","in","on","at","to","for","of","with",
+            "any","have","has","been","that","this","it","its","there","their","they"}
+    words = set(_re.findall(r"[a-z]+", question)) - stop
+
+    scored = []
+    for sig in signals:
+        text = ((sig.get("headline") or "") + " " + (sig.get("raw_text") or "")).lower()
+        hits = sum(1 for w in words if w in text)
+        if hits > 0:
+            scored.append((hits, sig))
+    scored.sort(key=lambda x: (-x[0], -(x[1].get("importance_score") or 0)))
+    top = [s for _, s in scored[:6]]
+
+    if not top:
+        answer = (
+            f"No recent news articles matched your query. "
+            f"Beacon currently has {len(signals)} articles in the 72-hour window covering Iran/military topics. "
+            f"Try broader keywords like 'troops', 'nuclear', 'sanctions', or 'diplomatic'."
+        )
+    else:
+        bull  = sum(1 for s in top if s.get("signal_direction") == "bullish")
+        bear  = sum(1 for s in top if s.get("signal_direction") == "bearish")
+        neut  = len(top) - bull - bear
+        sentiment = "escalatory" if bull > bear else "de-escalatory" if bear > bull else "mixed"
+
+        # Extract unique sources
+        def _src(r): return r.split("]")[0].lstrip("[") if r and r.startswith("[") else "GDELT"
+        srcs = list(dict.fromkeys(_src(s.get("reasoning","")) for s in top))
+
+        avg_imp = round(sum(s.get("importance_score",0) for s in top) / len(top))
+        top_headline = top[0].get("headline","")
+
+        answer = (
+            f"Found <strong>{len(scored)} relevant article(s)</strong> matching your query "
+            f"(showing top {len(top)}). "
+            f"Coverage is predominantly <strong>{sentiment}</strong> "
+            f"({bull} escalatory, {bear} de-escalatory, {neut} neutral). "
+            f"Sources: <strong>{', '.join(srcs[:4])}</strong>. "
+            f"Average importance score: <strong>{avg_imp}/100</strong>.<br><br>"
+            f"📌 Most relevant: \"{top_headline}\""
+        )
+
+    return {"answer": answer, "articles": top, "matches": len(scored)}
+
+
+@app.get("/api/orderbook/weighted")
+def get_weighted_orderbook():
+    """
+    Returns OB with proximity-weighted depth.
+    Weight formula: w = max(0, 1 - |price - mid| * 2)
+    Orders far from mid get low weight; orders close to mid get high weight.
+    """
+    market = polyapi.find_iran_boots_market()
+    if not market or not market.clob_token_ids:
+        raise HTTPException(status_code=404, detail="Market not found")
+    depth = polyapi.get_orderbook_depth(market.clob_token_ids[0])
+    if not depth:
+        raise HTTPException(status_code=503, detail="OB unavailable")
+
+    best_bid = depth.get("best_bid") or 0.5
+    best_ask = depth.get("best_ask") or 0.5
+    mid = (best_bid + best_ask) / 2
+
+    def weight(price: float) -> float:
+        return max(0.0, 1.0 - abs(price - mid) * 2.0)
+
+    w_bids, w_asks = [], []
+    for b in depth.get("bids", []):
+        w = weight(b["price"])
+        raw_not = b.get("notional", b["size"] * b["price"])
+        w_bids.append({**b, "weight": round(w, 4), "weighted_notional": round(raw_not * w, 2)})
+    for a in depth.get("asks", []):
+        w = weight(a["price"])
+        raw_not = a.get("notional", a["size"] * a["price"])
+        w_asks.append({**a, "weight": round(w, 4), "weighted_notional": round(raw_not * w, 2)})
+
+    w_bid_total = sum(b["weighted_notional"] for b in w_bids)
+    w_ask_total = sum(a["weighted_notional"] for a in w_asks)
+    w_total = w_bid_total + w_ask_total or 1
+
+    return {
+        "mid": round(mid, 4),
+        "weighted_bid_total": round(w_bid_total, 2),
+        "weighted_ask_total": round(w_ask_total, 2),
+        "weighted_imbalance": round((w_bid_total - w_ask_total) / w_total, 4),
+        "raw_bid_total": depth.get("total_bid_notional", 0),
+        "raw_ask_total": depth.get("total_ask_notional", 0),
+        "bids": w_bids, "asks": w_asks,
+    }
 
 
 @app.get("/api/command/status")
