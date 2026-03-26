@@ -39,6 +39,7 @@ import discovery
 import collector
 import volatility as volmod
 import signal_generator as siggen
+import video_monitor as vidmon
 
 app = FastAPI(title="First Strike Intelligence", version="2.0.0")
 
@@ -131,6 +132,18 @@ def _intel_loop():
                 top_sigs = cmd_state.get("top_signals", [])
                 headline = top_sigs[0].get("headline", "") if top_sigs else cmd_state.get("reason_summary", "")
                 send_alert_sms(alert_lvl, headline, cmd_state.get("market_odds"))
+
+            # ── Every 5 minutes (cycle % 2 == 1): video channel AI scan ──────
+            if cycle % 2 == 1:
+                try:
+                    vid_result = vidmon.run_video_monitor_cycle(
+                        send_sms_fn=send_alert_sms,
+                        store_signal_fn=store_signal,
+                    )
+                    if vid_result["alerts"]:
+                        print(f"[Video] {vid_result['alerts']} channel alert(s), {vid_result['sms_sent']} SMS sent")
+                except Exception as ve:
+                    print(f"[Video] Monitor error: {ve}")
 
         except Exception as e:
             print(f"[Intel] Loop error: {e}")
@@ -1295,6 +1308,49 @@ def api_video_streams():
             continue
 
     return {"live_count": len(streams), "streams": streams[:12], "no_api_key": False}
+
+
+@app.get("/api/video/monitor")
+def api_video_monitor():
+    """Return AI channel monitor state — which channels are live, what keywords hit."""
+    state = vidmon.get_monitor_state()
+    return {
+        "last_scan": state.get("last_scan"),
+        "channels_live": state.get("channels_live", 0),
+        "alerts_fired": state.get("alerts_fired", 0),
+        "youtube_key_set": bool(os.environ.get("YOUTUBE_API_KEY")),
+        "channel_status": list(state.get("channel_status", {}).values()),
+    }
+
+
+@app.post("/api/video/scan")
+def api_video_scan():
+    """Manually trigger an immediate AI video channel scan."""
+    alerts = vidmon.scan_all_channels()
+    for alert in alerts:
+        from intelligence.signals import Signal, MARKET_SLUG
+        try:
+            kws = ", ".join(alert.get("keywords", [])[:3])
+            sig = Signal(
+                source_app="video",
+                timestamp=alert["timestamp"],
+                headline=f"[{alert['channel']}] {alert['title'][:120]}",
+                raw_text=f"Keywords: {kws}",
+                signal_direction="bullish",
+                confidence_score=90 if alert["level"] == "URGENT" else 70,
+                importance_score=90 if alert["level"] == "URGENT" else 65,
+                probability_impact_estimate=5.0 if alert["level"] == "URGENT" else 2.0,
+                reasoning=f"Video monitor: {kws}",
+                link=f"https://www.youtube.com/watch?v={alert.get('video_id','')}",
+                market_slug=MARKET_SLUG,
+            )
+            store_signal(sig)
+            send_alert_sms(alert["level"], sig.headline, None)
+        except Exception:
+            pass
+    return {"scanned": len(vidmon.CHANNELS), "alerts": len(alerts),
+            "youtube_key_set": bool(os.environ.get("YOUTUBE_API_KEY"))}
+
 
 @app.get("/markets", response_class=HTMLResponse)
 def multi_market_dashboard():

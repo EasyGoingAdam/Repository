@@ -29,73 +29,73 @@
     .stat .sub{font-size:11px;color:var(--muted);margin-top:3px}
 
     /* Alert banner */
-    .alert-banner{display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:12px 18px;margin-bottom:18px;animation:pulse-border 2s infinite}
-    .alert-banner.show{display:flex;align-items:center;gap:12px}
-    .alert-banner .alert-icon{font-size:22px}
-    .alert-banner .alert-text{font-size:13px;font-weight:700;color:var(--red)}
-    .alert-banner .alert-sub{font-size:11px;color:var(--muted);margin-top:2px}
-    @keyframes pulse-border{0%,100%{border-color:rgba(239,68,68,.4)}50%{border-color:rgba(239,68,68,.9)}}
+    .alert-banner{display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:14px 18px;margin-bottom:18px;align-items:center;gap:14px}
+    .alert-banner.show{display:flex;animation:pulse-border 2s infinite}
+    @keyframes pulse-border{0%,100%{border-color:rgba(239,68,68,.4)}50%{border-color:rgba(239,68,68,.95)}}
+    .alert-icon{font-size:26px}
+    .alert-text{font-size:14px;font-weight:700;color:var(--red)}
+    .alert-sub{font-size:11px;color:var(--muted);margin-top:3px}
 
-    /* Grid layout */
+    /* Main layout */
     .video-layout{display:grid;grid-template-columns:1fr 340px;gap:18px}
     @media(max-width:1000px){.video-layout{grid-template-columns:1fr}}
 
-    /* Channel selector tabs */
-    .channel-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-    .ch-tab{padding:5px 12px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:all .2s}
+    /* Channel tabs */
+    .channel-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+    .ch-tab{padding:5px 13px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:all .2s;display:flex;align-items:center;gap:5px}
     .ch-tab:hover{color:var(--text);border-color:var(--cyan)}
     .ch-tab.active{background:rgba(6,182,212,.15);color:var(--cyan);border-color:rgba(6,182,212,.4)}
-    .ch-tab .live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:4px;animation:blink 1.2s infinite}
-    @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+    .ch-tab.priority{border-color:rgba(239,179,8,.4);color:var(--yellow);background:rgba(234,179,8,.08)}
+    .ch-tab.priority.active{background:rgba(234,179,8,.18);border-color:var(--yellow)}
+    .live-dot{width:6px;height:6px;border-radius:50%;background:var(--red);flex-shrink:0;animation:blink 1.2s infinite}
+    .live-dot.ai{background:var(--cyan)}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 
     /* Video embed */
-    .video-wrapper{background:#000;border:1px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:16/9;position:relative}
+    .video-wrapper{background:#000;border:1px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:16/9}
     .video-wrapper iframe{width:100%;height:100%;border:none;display:block}
-    .video-offline{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px;gap:12px;padding:32px}
-    .video-offline .icon{font-size:48px}
 
-    /* Live stream grid (bottom) */
-    .stream-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:18px}
-    .stream-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer;transition:border-color .2s}
-    .stream-card:hover{border-color:var(--cyan)}
-    .stream-card.selected{border-color:var(--cyan);border-width:2px}
-    .stream-thumb{width:100%;aspect-ratio:16/9;background:#000;position:relative;overflow:hidden}
-    .stream-thumb img{width:100%;height:100%;object-fit:cover}
-    .stream-live-badge{position:absolute;top:6px;left:6px;background:var(--red);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px}
-    .stream-info{padding:10px 12px}
-    .stream-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-    .stream-meta{font-size:10px;color:var(--muted)}
-    .stream-channel{font-size:11px;color:var(--cyan);font-weight:700;margin-bottom:3px}
+    /* AI monitor panel */
+    .ai-monitor-panel{background:rgba(6,182,212,.04);border:1px solid rgba(6,182,212,.2);border-radius:8px;padding:14px 16px;margin-top:16px}
+    .ai-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .ai-panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--cyan)}
+    .ai-scan-btn{background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.3);color:var(--cyan);padding:4px 12px;border-radius:4px;font-size:10px;cursor:pointer;font-family:inherit}
+    .ai-scan-btn:hover{background:rgba(6,182,212,.22)}
+    .channel-monitor-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+    .ch-monitor-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px}
+    .ch-monitor-card.live{border-color:rgba(34,197,94,.3)}
+    .ch-monitor-card.alert{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.04)}
+    .ch-monitor-name{font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px}
+    .ch-monitor-status{font-size:10px;display:flex;align-items:center;gap:5px}
+    .ch-monitor-kws{font-size:9px;color:var(--red);margin-top:4px;line-height:1.4}
 
-    /* Alert feed sidebar */
+    /* Sidebar cards */
     .sidebar-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:14px}
     .sidebar-card h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--cyan);margin-bottom:12px}
     .alert-item{border-left:3px solid var(--red);padding:8px 10px;margin-bottom:8px;background:rgba(239,68,68,.04);border-radius:0 4px 4px 0}
-    .alert-item.important{border-left-color:var(--yellow)}
-    .alert-item.digest{border-left-color:var(--blue)}
+    .alert-item.important{border-left-color:var(--yellow);background:rgba(234,179,8,.03)}
+    .alert-item.digest{border-left-color:var(--blue);background:rgba(59,130,246,.03)}
     .alert-item .al-head{font-size:11px;font-weight:700;color:var(--text);margin-bottom:3px;line-height:1.4}
     .alert-item .al-meta{font-size:10px;color:var(--muted)}
-    .keyword-hit{background:rgba(239,68,68,.15);color:var(--red);border-radius:2px;padding:0 3px}
+    .kw-hit{background:rgba(239,68,68,.2);color:var(--red);border-radius:2px;padding:0 3px}
 
-    /* Known channels list */
-    .channel-list-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
-    .channel-list-item:last-child{border-bottom:none}
-    .ch-icon{width:32px;height:32px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
-    .ch-name{font-size:12px;font-weight:700;color:var(--text)}
-    .ch-status{font-size:10px;margin-top:2px}
-    .ch-status.live{color:var(--red)}
-    .ch-status.offline{color:var(--muted)}
-    .ch-watch-btn{margin-left:auto;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:var(--cyan);padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-family:inherit}
-    .ch-watch-btn:hover{background:rgba(6,182,212,.2)}
+    /* Keyword chips */
+    .kw-grid{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+    .kw-chip{padding:3px 9px;border-radius:10px;font-size:10px;background:rgba(100,116,139,.1);color:var(--muted);border:1px solid var(--border);transition:all .3s}
+    .kw-chip.hot{background:rgba(239,68,68,.15);color:var(--red);border-color:rgba(239,68,68,.4)}
 
-    /* Loading / empty states */
-    .loading{color:var(--muted);font-size:12px;text-align:center;padding:32px}
-    .no-key-notice{background:rgba(234,179,8,.06);border:1px solid rgba(234,179,8,.25);border-radius:8px;padding:14px 18px;margin-bottom:18px;font-size:12px;color:var(--yellow);line-height:1.7}
+    /* Roster */
+    .roster-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+    .roster-item:last-child{border-bottom:none}
+    .roster-icon{width:30px;height:30px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+    .roster-name{font-size:12px;font-weight:700;color:var(--text)}
+    .roster-status{font-size:10px;color:var(--muted);margin-top:1px}
+    .roster-status.live{color:var(--green)}
+    .watch-btn{margin-left:auto;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:var(--cyan);padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-family:inherit;white-space:nowrap}
+    .watch-btn:hover{background:rgba(6,182,212,.2)}
 
-    /* Keyword escalation monitor */
-    .keyword-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-    .kw-chip{padding:3px 9px;border-radius:10px;font-size:10px;background:rgba(100,116,139,.12);color:var(--muted);border:1px solid var(--border)}
-    .kw-chip.hot{background:rgba(239,68,68,.15);color:var(--red);border-color:rgba(239,68,68,.3)}
+    .loading{color:var(--muted);font-size:12px;text-align:center;padding:28px}
+    .no-key-box{background:rgba(234,179,8,.06);border:1px solid rgba(234,179,8,.25);border-radius:8px;padding:12px 16px;font-size:11px;color:var(--yellow);line-height:1.7}
 
     ::-webkit-scrollbar{width:5px}
     ::-webkit-scrollbar-track{background:var(--bg)}
@@ -107,128 +107,131 @@
   <div class="logo"><span>FIRST</span> STRIKE</div>
   <div style="display:flex;align-items:center;gap:12px">
     <span class="desk-badge">📹 Video Feed Monitor</span>
-    <span id="streamCount" style="font-size:10px;color:var(--muted)">Scanning...</span>
+    <span id="aiStatus" style="font-size:10px;color:var(--cyan)">AI: Initializing...</span>
   </div>
   <span id="viewerBadge" style="font-size:11px;color:var(--muted);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:2px 9px;border-radius:10px">👁 —</span>
 </header>
 
 <nav class="desk-nav">
-  <a href="/command"    class="desk-nav-item">🎖️ Command</a>
-  <a href="/pulse"      class="desk-nav-item">🕵️ Pulse</a>
-  <a href="/beacon"     class="desk-nav-item">📡 Beacon</a>
+  <a href="/command"     class="desk-nav-item">🎖️ Command</a>
+  <a href="/pulse"       class="desk-nav-item">🕵️ Pulse</a>
+  <a href="/beacon"      class="desk-nav-item">📡 Beacon</a>
   <a href="/market-desk" class="desk-nav-item">📊 Market</a>
-  <a href="/orderflow"  class="desk-nav-item">📈 OrderFlow</a>
-  <a href="/volatility" class="desk-nav-item">⚡ Volatility</a>
-  <a href="/historian"  class="desk-nav-item">📜 Historian</a>
-  <a href="/video"      class="desk-nav-item active">📹 Video</a>
+  <a href="/orderflow"   class="desk-nav-item">📈 OrderFlow</a>
+  <a href="/volatility"  class="desk-nav-item">⚡ Volatility</a>
+  <a href="/historian"   class="desk-nav-item">📜 Historian</a>
+  <a href="/video"       class="desk-nav-item active">📹 Video</a>
   <div class="nav-spacer"></div>
   <a href="/" class="desk-nav-item" style="opacity:.55">← Dashboard</a>
 </nav>
 
 <div class="container">
 
-  <!-- Alert banner (shown when URGENT signal detected) -->
+  <!-- Alert banner -->
   <div class="alert-banner" id="alertBanner">
     <div class="alert-icon">🚨</div>
     <div>
-      <div class="alert-text" id="alertBannerText">URGENT SIGNAL DETECTED</div>
-      <div class="alert-sub" id="alertBannerSub">Monitoring live feeds for confirmation...</div>
+      <div class="alert-text" id="alertBannerText">URGENT: VIDEO ALERT DETECTED</div>
+      <div class="alert-sub" id="alertBannerSub">AI monitoring detected escalation keywords in live feed</div>
     </div>
   </div>
 
-  <!-- Stats row -->
+  <!-- Stats -->
   <div class="stats-row">
-    <div class="stat"><div class="lbl">Live Streams</div><div class="val" style="color:var(--red)" id="sLive">—</div><div class="sub">currently active</div></div>
-    <div class="stat"><div class="lbl">Channels Watched</div><div class="val" style="color:var(--cyan)" id="sChannels">7</div><div class="sub">news sources</div></div>
-    <div class="stat"><div class="lbl">Alert Level</div><div class="val" style="font-size:16px;padding-top:4px" id="sAlert">—</div><div class="sub">current status</div></div>
+    <div class="stat"><div class="lbl">Channels Monitored</div><div class="val" style="color:var(--cyan)" id="sChannels">8</div><div class="sub">by AI 24/7</div></div>
+    <div class="stat"><div class="lbl">Live Right Now</div><div class="val" style="color:var(--green)" id="sLive">—</div><div class="sub">streaming</div></div>
+    <div class="stat"><div class="lbl">Alerts Fired</div><div class="val" style="color:var(--red)" id="sAlertsFired">—</div><div class="sub">this session</div></div>
+    <div class="stat"><div class="lbl">Alert Level</div><div class="val" style="font-size:16px;padding-top:4px" id="sAlert">—</div><div class="sub">command status</div></div>
     <div class="stat"><div class="lbl">Market Price</div><div class="val" style="color:var(--yellow)" id="sPrice">—</div><div class="sub">Iran Boots YES</div></div>
-    <div class="stat"><div class="lbl">Last Signal</div><div class="val" style="font-size:14px;padding-top:4px;color:var(--muted)" id="sLastSig">—</div><div class="sub">most recent</div></div>
+    <div class="stat"><div class="lbl">Last AI Scan</div><div class="val" style="font-size:13px;padding-top:6px;color:var(--muted)" id="sLastScan">—</div><div class="sub">channel sweep</div></div>
   </div>
 
   <div class="video-layout">
-
-    <!-- Main video column -->
     <div>
 
-      <!-- Channel selector tabs -->
+      <!-- Channel selector tabs — Agenda Free TV FIRST -->
       <div class="channel-tabs" id="channelTabs">
-        <div class="ch-tab active" data-yt="UCNye-wNBqNL5ZzHSJj3l8Bg" data-name="Al Jazeera" onclick="selectChannel(this)">
+        <div class="ch-tab priority active"
+             data-ch="UCshCsg1YVKli8yBai-wa78w" data-name="Agenda Free TV"
+             onclick="selectChannel(this)">
+          <span class="live-dot"></span>⭐ Agenda Free TV
+        </div>
+        <div class="ch-tab" data-ch="UCNye-wNBqNL5ZzHSJj3l8Bg" data-name="Al Jazeera" onclick="selectChannel(this)">
           <span class="live-dot"></span>Al Jazeera
         </div>
-        <div class="ch-tab" data-yt="UC16niRr50-MSBwiO3YDb3RA" data-name="BBC News" onclick="selectChannel(this)">
+        <div class="ch-tab" data-ch="UC16niRr50-MSBwiO3YDb3RA" data-name="BBC News" onclick="selectChannel(this)">
           <span class="live-dot"></span>BBC News
         </div>
-        <div class="ch-tab" data-yt="UCupvZG-5ko_eiXAupbDfxWw" data-name="CNN" onclick="selectChannel(this)">
+        <div class="ch-tab" data-ch="UCupvZG-5ko_eiXAupbDfxWw" data-name="CNN" onclick="selectChannel(this)">
           <span class="live-dot"></span>CNN
         </div>
-        <div class="ch-tab" data-yt="UCknLrEdhRCp1aegoMqRaCZg" data-name="Iran International" onclick="selectChannel(this)">
+        <div class="ch-tab" data-ch="UCknLrEdhRCp1aegoMqRaCZg" data-name="Iran International" onclick="selectChannel(this)">
           <span class="live-dot"></span>Iran Intl.
         </div>
-        <div class="ch-tab" data-yt="UCt-ATdQvbGnGXFSUEJoGlTA" data-name="WION" onclick="selectChannel(this)">
+        <div class="ch-tab" data-ch="UCt-ATdQvbGnGXFSUEJoGlTA" data-name="WION" onclick="selectChannel(this)">
           <span class="live-dot"></span>WION
         </div>
-        <div class="ch-tab" data-yt="UCknLrEdhRCp1aegoMqRaCZg" data-name="DW News" onclick="selectChannel(this)">
+        <div class="ch-tab" data-ch="UCzWQYUVCpZqtN93H8RR44Qw" data-name="DW News" onclick="selectChannel(this)">
           <span class="live-dot"></span>DW News
         </div>
-        <div class="ch-tab" data-yt="UCIALMKvObZNtJ6AmdCLP_Lg" data-name="Bloomberg" onclick="selectChannel(this)">
+        <div class="ch-tab" data-ch="UCIALMKvObZNtJ6AmdCLP_Lg" data-name="Bloomberg" onclick="selectChannel(this)">
           <span class="live-dot"></span>Bloomberg
         </div>
       </div>
 
-      <!-- Primary video embed -->
-      <div class="video-wrapper" id="videoWrapper">
+      <!-- Primary video -->
+      <div class="video-wrapper">
         <iframe id="mainVideo"
-          src="https://www.youtube.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSJj3l8Bg&autoplay=1&mute=1"
-          allow="autoplay; encrypted-media"
-          allowfullscreen
+          src="https://www.youtube.com/embed/live_stream?channel=UCshCsg1YVKli8yBai-wa78w&autoplay=1&mute=1"
+          allow="autoplay; encrypted-media" allowfullscreen
           referrerpolicy="no-referrer-when-downgrade">
         </iframe>
       </div>
-
-      <div style="margin-top:8px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:12px">
-        <span id="nowWatching" style="color:var(--cyan);font-weight:700">▶ Al Jazeera Live</span>
-        <span>Video auto-muted on load · click player to unmute</span>
-        <span style="margin-left:auto">Streams refresh every 5 min</span>
+      <div style="margin-top:7px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:10px">
+        <span id="nowWatching" style="color:var(--cyan);font-weight:700">▶ Agenda Free TV Live</span>
+        <span>Auto-muted on load · click to unmute</span>
+        <span style="margin-left:auto" id="nowWatchingTime"></span>
       </div>
 
-      <!-- YouTube API live stream results (when key is set) -->
-      <div id="liveStreamsSection" style="margin-top:24px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--cyan);margin-bottom:12px">
-          🔴 Iran-Related Live Streams
+      <!-- AI Monitor Panel -->
+      <div class="ai-monitor-panel">
+        <div class="ai-panel-header">
+          <span class="ai-panel-title">🤖 AI Channel Monitor — All 8 Feeds</span>
+          <button class="ai-scan-btn" onclick="triggerScan()">⚡ Scan Now</button>
         </div>
-        <div id="streamGrid" class="stream-grid">
-          <div class="loading">Scanning YouTube for live streams...</div>
+        <div id="noKeyNote" class="no-key-box" style="display:none;margin-bottom:10px">
+          <strong>⚠️ YOUTUBE_API_KEY not set</strong> — Add it in Railway env vars to enable live chat + title scanning.<br>
+          AI will still monitor signals from Pulse/Beacon. Set key to unlock full video feed analysis.
+        </div>
+        <div class="channel-monitor-grid" id="monitorGrid">
+          <div class="loading" style="grid-column:1/-1">Loading AI monitor status...</div>
         </div>
       </div>
 
     </div>
 
-    <!-- Sidebar: alert feed + channel roster -->
+    <!-- Sidebar -->
     <div>
 
-      <!-- Real-time alert feed -->
+      <!-- Breaking signal feed -->
       <div class="sidebar-card">
         <h3>🚨 Breaking Signal Feed</h3>
-        <div id="alertFeed">
-          <div class="loading">Loading signals...</div>
-        </div>
+        <div id="alertFeed"><div class="loading">Loading...</div></div>
       </div>
 
-      <!-- Escalation keywords being monitored -->
+      <!-- Escalation keywords -->
       <div class="sidebar-card">
-        <h3>🔍 Escalation Keywords</h3>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Watching live chats & news for:</div>
-        <div class="keyword-grid" id="keywordGrid">
-          <!-- Populated by JS -->
+        <h3>🔍 Monitored Keywords</h3>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px">
+          Tier 1 (URGENT) · Tier 2 (IMPORTANT) · scanning titles + live chats
         </div>
+        <div class="kw-grid" id="kwGrid"></div>
       </div>
 
       <!-- Channel roster -->
       <div class="sidebar-card">
         <h3>📡 Channel Roster</h3>
-        <div id="channelRoster">
-          <!-- Populated by JS -->
-        </div>
+        <div id="channelRoster"></div>
       </div>
 
     </div>
@@ -237,259 +240,237 @@
 </div>
 
 <script>
-const BASE = '';
-
-// Known channels with YouTube live embed IDs
+// ── Channels — Agenda Free TV FIRST ──────────────────────────────────────────
 const CHANNELS = [
-  { id:'UCNye-wNBqNL5ZzHSJj3l8Bg', name:'Al Jazeera English', icon:'📺', embed:'UCNye-wNBqNL5ZzHSJj3l8Bg' },
-  { id:'UC16niRr50-MSBwiO3YDb3RA', name:'BBC News',            icon:'🇬🇧', embed:'UC16niRr50-MSBwiO3YDb3RA' },
-  { id:'UCupvZG-5ko_eiXAupbDfxWw', name:'CNN',                 icon:'📡', embed:'UCupvZG-5ko_eiXAupbDfxWw' },
-  { id:'UCknLrEdhRCp1aegoMqRaCZg', name:'Iran International',  icon:'🇮🇷', embed:'UCknLrEdhRCp1aegoMqRaCZg' },
-  { id:'UCt-ATdQvbGnGXFSUEJoGlTA', name:'WION',                icon:'🌏', embed:'UCt-ATdQvbGnGXFSUEJoGlTA' },
-  { id:'UCzWQYUVCpZqtN93H8RR44Qw', name:'DW News',             icon:'🇩🇪', embed:'UCzWQYUVCpZqtN93H8RR44Qw' },
-  { id:'UCIALMKvObZNtJ6AmdCLP_Lg', name:'Bloomberg TV',        icon:'💹', embed:'UCIALMKvObZNtJ6AmdCLP_Lg' },
+  {id:'UCshCsg1YVKli8yBai-wa78w', name:'Agenda Free TV',   icon:'⭐', priority:true},
+  {id:'UCNye-wNBqNL5ZzHSJj3l8Bg', name:'Al Jazeera Eng',   icon:'📺'},
+  {id:'UC16niRr50-MSBwiO3YDb3RA', name:'BBC News',          icon:'🇬🇧'},
+  {id:'UCupvZG-5ko_eiXAupbDfxWw', name:'CNN',               icon:'📡'},
+  {id:'UCknLrEdhRCp1aegoMqRaCZg', name:'Iran International',icon:'🇮🇷'},
+  {id:'UCt-ATdQvbGnGXFSUEJoGlTA', name:'WION',              icon:'🌏'},
+  {id:'UCzWQYUVCpZqtN93H8RR44Qw', name:'DW News',           icon:'🇩🇪'},
+  {id:'UCIALMKvObZNtJ6AmdCLP_Lg', name:'Bloomberg TV',      icon:'💹'},
 ];
 
-const ESCALATION_KEYWORDS = [
-  'boots on ground','iran attack','military strike','us forces','irgc',
-  'tehran bombed','hegseth','centcom','ceasefire','nuclear site',
-  'hormuz','drone strike','missiles launched','war declaration',
-  'troops deployed','pentagon','khamenei','evacuation','urgent',
-  'breaking','invasion','airstrike','oil tanker','carrier strike',
-];
-
-let currentChannel = CHANNELS[0];
-let lastAlertLevel = null;
+const TIER1 = ['boots on ground','us forces enter iran','war declared','nuclear strike',
+               'missiles launched','us troops in iran','military invasion','centcom confirms'];
+const TIER2 = ['iran military','irgc','nuclear site','hormuz blocked','khamenei',
+               'hegseth iran','trump iran','evacuation order','ceasefire broken'];
+const ALL_KWS = [...TIER1, ...TIER2, 'iran','tehran','ceasefire','houthi','hezbollah',
+                'proxy war','oil tanker','sanctions','drone strike','airstrike'];
 
 // ── Viewer heartbeat ──────────────────────────────────────────────────────────
 (function(){
   let sid = localStorage.getItem('fs_session_id');
-  if(!sid){ sid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c=='x'?r:(r&0x3|0x8)).toString(16)}); localStorage.setItem('fs_session_id',sid); }
-  function beat(){ fetch('/api/heartbeat',{method:'POST',headers:{'X-Session-Id':sid}}).then(r=>r.json()).then(d=>{ document.getElementById('viewerBadge').textContent='👁 '+d.viewers; }).catch(()=>{}); }
+  if(!sid){
+    sid='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
+      const r=Math.random()*16|0; return(c=='x'?r:(r&0x3|0x8)).toString(16);
+    });
+    localStorage.setItem('fs_session_id',sid);
+  }
+  function beat(){
+    fetch('/api/heartbeat',{method:'POST',headers:{'X-Session-Id':sid}})
+      .then(r=>r.json()).then(d=>{ document.getElementById('viewerBadge').textContent='👁 '+d.viewers; })
+      .catch(()=>{});
+  }
   beat(); setInterval(beat,30000);
 })();
 
-// ── Channel selector ──────────────────────────────────────────────────────────
+// ── Channel select ────────────────────────────────────────────────────────────
 function selectChannel(el) {
   document.querySelectorAll('.ch-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
-  const chId = el.dataset.yt;
-  const name  = el.dataset.name;
+  const chId = el.dataset.ch, name = el.dataset.name;
   document.getElementById('mainVideo').src =
     `https://www.youtube.com/embed/live_stream?channel=${chId}&autoplay=1&mute=1`;
   document.getElementById('nowWatching').textContent = '▶ ' + name + ' Live';
-}
-
-// ── Build keyword chips ───────────────────────────────────────────────────────
-function buildKeywords() {
-  const g = document.getElementById('keywordGrid');
-  g.innerHTML = ESCALATION_KEYWORDS.map(k =>
-    `<span class="kw-chip" id="kw-${k.replace(/\s+/g,'_')}">${k}</span>`
-  ).join('');
-}
-
-// ── Build channel roster ──────────────────────────────────────────────────────
-function buildRoster() {
-  const r = document.getElementById('channelRoster');
-  r.innerHTML = CHANNELS.map(ch => `
-    <div class="channel-list-item">
-      <div class="ch-icon">${ch.icon}</div>
-      <div>
-        <div class="ch-name">${ch.name}</div>
-        <div class="ch-status live">● LIVE 24/7</div>
-      </div>
-      <button class="ch-watch-btn" onclick="watchChannel('${ch.embed}','${ch.name}')">Watch</button>
-    </div>
-  `).join('');
+  document.getElementById('nowWatchingTime').textContent = new Date().toLocaleTimeString();
 }
 
 function watchChannel(chId, name) {
   document.getElementById('mainVideo').src =
     `https://www.youtube.com/embed/live_stream?channel=${chId}&autoplay=1&mute=1`;
   document.getElementById('nowWatching').textContent = '▶ ' + name + ' Live';
+  document.getElementById('nowWatchingTime').textContent = new Date().toLocaleTimeString();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
-// ── Load live YouTube streams (via server API) ────────────────────────────────
-async function loadLiveStreams() {
+// ── AI monitor status ─────────────────────────────────────────────────────────
+async function loadMonitorStatus() {
   try {
-    const r = await fetch('/api/video/streams');
+    const r = await fetch('/api/video/monitor');
     const d = await r.json();
-    const grid = document.getElementById('streamGrid');
-    document.getElementById('sLive').textContent = d.live_count ?? '—';
 
-    if (d.no_api_key) {
-      grid.innerHTML = `
-        <div class="no-key-notice" style="grid-column:1/-1">
-          <strong>⚠️ YouTube API Key Not Configured</strong><br>
-          Set <code>YOUTUBE_API_KEY</code> in Railway env vars to enable live stream discovery.<br>
-          Use the channel tabs above to watch known 24/7 news streams directly.
-        </div>`;
-      return;
+    document.getElementById('sLive').textContent = d.channels_live ?? '—';
+    document.getElementById('sAlertsFired').textContent = d.alerts_fired ?? '0';
+    document.getElementById('sLastScan').textContent = d.last_scan ? relTime(d.last_scan) : 'Pending';
+    document.getElementById('aiStatus').textContent =
+      d.youtube_key_set ? '🤖 AI: Scanning' : '🤖 AI: No API Key';
+
+    if (!d.youtube_key_set) {
+      document.getElementById('noKeyNote').style.display = 'block';
     }
 
-    if (!d.streams || d.streams.length === 0) {
-      grid.innerHTML = `<div class="loading">No Iran-related live streams found right now.<br>Check back when news breaks.</div>`;
-      return;
-    }
+    const grid = document.getElementById('monitorGrid');
+    const statuses = d.channel_status || [];
 
-    grid.innerHTML = d.streams.map(s => `
-      <div class="stream-card" onclick="watchYT('${s.video_id}','${escHtml(s.title)}')">
-        <div class="stream-thumb">
-          <img src="${s.thumbnail}" alt="" onerror="this.style.display='none'">
-          <span class="stream-live-badge">🔴 LIVE</span>
-        </div>
-        <div class="stream-info">
-          <div class="stream-channel">${escHtml(s.channel)}</div>
-          <div class="stream-title">${escHtml(s.title)}</div>
-          <div class="stream-meta">${s.viewers ? s.viewers.toLocaleString()+' watching' : 'Live now'}</div>
-        </div>
-      </div>
-    `).join('');
-  } catch(e) {
-    document.getElementById('streamGrid').innerHTML =
-      `<div class="loading">Stream scan unavailable: ${e.message}</div>`;
-  }
-}
+    // Merge with our known channel list — show all 8 even if no status yet
+    const statusMap = {};
+    statuses.forEach(s => { statusMap[s.name] = s; });
 
-function watchYT(videoId, title) {
-  document.getElementById('mainVideo').src =
-    `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`;
-  document.getElementById('nowWatching').textContent = '▶ ' + title.slice(0,60);
-  window.scrollTo({top:0,behavior:'smooth'});
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ── Alert feed from command signals ──────────────────────────────────────────
-async function loadAlertFeed() {
-  try {
-    const [stateR, sigsR] = await Promise.all([
-      fetch('/api/command/status'),
-      fetch('/api/command/signals?limit=20')
-    ]);
-    const state = await stateR.json();
-    const sigs  = await sigsR.json();
-
-    // Stats
-    const alertLevel = state.alert_level || 'NO_ACTION';
-    document.getElementById('sAlert').textContent = alertLevelEmoji(alertLevel) + ' ' + alertLevel;
-    document.getElementById('sPrice').textContent = state.market_odds ? state.market_odds + '¢' : '—';
-
-    // Alert banner logic
-    if (alertLevel === 'URGENT' && lastAlertLevel !== 'URGENT') {
-      const banner = document.getElementById('alertBanner');
-      banner.classList.add('show');
-      const topSig = (state.top_signals || [])[0];
-      if (topSig) {
-        document.getElementById('alertBannerText').textContent = '🚨 URGENT: ' + topSig.headline;
-        document.getElementById('alertBannerSub').textContent = 'Source: ' + topSig.source_app + ' · Confidence: ' + topSig.confidence_score;
-      }
-    } else if (alertLevel !== 'URGENT') {
-      document.getElementById('alertBanner').classList.remove('show');
-    }
-    lastAlertLevel = alertLevel;
-
-    // Signal feed
-    const feed = document.getElementById('alertFeed');
-    const signals = Array.isArray(sigs) ? sigs : (sigs.signals || []);
-    document.getElementById('sLastSig').textContent = signals.length > 0
-      ? relTime(signals[0].timestamp)
-      : 'No signals';
-
-    if (signals.length === 0) {
-      feed.innerHTML = '<div class="loading">No recent signals</div>';
-      return;
-    }
-
-    feed.innerHTML = signals.slice(0,12).map(s => {
-      const cls = s.importance_score >= 80 ? 'alert-item' :
-                  s.importance_score >= 60 ? 'alert-item important' : 'alert-item digest';
-      const dir = s.signal_direction;
-      const dirColor = dir==='bullish'?'#22c55e':dir==='bearish'?'#ef4444':'#64748b';
-      const headline = highlightKeywords(escHtml(s.headline || ''));
+    grid.innerHTML = CHANNELS.map(ch => {
+      const s = statusMap[ch.name] || {};
+      const isLive = s.live;
+      const kws = s.keywords_found || [];
+      const hasAlert = kws.length > 0;
+      const cardCls = hasAlert ? 'ch-monitor-card alert' : isLive ? 'ch-monitor-card live' : 'ch-monitor-card';
+      const statusDot = isLive ? '<span class="live-dot" style="display:inline-block"></span>' : '◦';
+      const statusTxt = isLive ? '<span style="color:var(--green)">LIVE</span>' : '<span style="color:var(--muted)">Offline</span>';
+      const kwHtml = kws.length ? `<div class="ch-monitor-kws">⚠ ${kws.slice(0,3).join(', ')}</div>` : '';
       return `
-        <div class="${cls}">
-          <div class="al-head">${headline}</div>
-          <div class="al-meta">
-            <span style="color:${dirColor}">${dir?.toUpperCase()}</span>
-            · ${s.source_app || '?'} · I:${s.importance_score} · ${relTime(s.timestamp)}
+        <div class="${cardCls}" onclick="watchChannel('${ch.id}','${ch.name}')" style="cursor:pointer">
+          <div class="ch-monitor-name">${ch.icon||'📺'} ${ch.name}${ch.priority?' ⭐':''}</div>
+          <div class="ch-monitor-status">${statusDot} ${statusTxt}
+            ${s.title ? `· <span style="color:var(--muted);font-size:9px">${escHtml(s.title).slice(0,35)}…</span>` : ''}
           </div>
+          ${kwHtml}
+          ${d.youtube_key_set && !isLive && !s.error ? '<div style="font-size:9px;color:var(--muted);margin-top:3px">No live stream detected</div>' : ''}
+          ${s.error ? `<div style="font-size:9px;color:var(--red);margin-top:3px">${escHtml(s.error)}</div>` : ''}
         </div>`;
     }).join('');
   } catch(e) {
-    document.getElementById('alertFeed').innerHTML =
-      `<div class="loading">Feed error: ${e.message}</div>`;
+    document.getElementById('monitorGrid').innerHTML = `<div class="loading">Monitor unavailable: ${e.message}</div>`;
   }
 }
 
-function highlightKeywords(text) {
-  const kws = ['iran','attack','strike','boots','military','troops',
-                'urgent','breaking','missile','nuclear','war','crisis',
-                'centcom','hegseth','irgc','khamenei'];
-  let out = text;
-  kws.forEach(k => {
-    const re = new RegExp(`(${k})`, 'gi');
-    out = out.replace(re, '<span class="keyword-hit">$1</span>');
-  });
-  return out;
-}
-
-function alertLevelEmoji(level) {
-  return {URGENT:'🚨',IMPORTANT:'⚠️',DIGEST:'📋',NO_ACTION:'✅'}[level] || '—';
-}
-
-function relTime(ts) {
-  if (!ts) return '—';
+async function triggerScan() {
+  const btn = document.querySelector('.ai-scan-btn');
+  btn.textContent = '⏳ Scanning...';
+  btn.disabled = true;
   try {
-    const diff = (Date.now() - new Date(ts).getTime()) / 1000;
-    if (diff < 60)  return Math.round(diff) + 's ago';
-    if (diff < 3600) return Math.round(diff/60) + 'm ago';
-    return Math.round(diff/3600) + 'h ago';
-  } catch{ return '—'; }
-}
-
-// ── Load command status for header stats ─────────────────────────────────────
-async function loadStats() {
-  try {
-    const r = await fetch('/api/command/status');
+    const r = await fetch('/api/video/scan', {method:'POST'});
     const d = await r.json();
-    const sigs = d.signal_counts || {};
-    document.getElementById('sChannels').textContent = CHANNELS.length;
-  } catch{}
+    btn.textContent = d.alerts > 0 ? `🚨 ${d.alerts} Alert(s)!` : '✓ Scan Complete';
+    setTimeout(()=>{ btn.textContent='⚡ Scan Now'; btn.disabled=false; loadMonitorStatus(); }, 3000);
+  } catch(e) {
+    btn.textContent = '⚡ Scan Now'; btn.disabled = false;
+  }
 }
 
-// ── Highlight hot keywords when signals contain them ─────────────────────────
-async function highlightHotKeywords() {
+// ── Signal feed ───────────────────────────────────────────────────────────────
+async function loadAlertFeed() {
   try {
-    const r = await fetch('/api/command/signals?limit=30');
-    const d = await r.json();
-    const signals = Array.isArray(d) ? d : (d.signals || []);
-    const text = signals.map(s => (s.headline||'').toLowerCase() + ' ' + (s.raw_text||'').toLowerCase()).join(' ');
-    ESCALATION_KEYWORDS.forEach(kw => {
-      const el = document.getElementById('kw-' + kw.replace(/\s+/g,'_'));
-      if (el) {
-        const isHot = text.includes(kw.toLowerCase());
-        el.classList.toggle('hot', isHot);
+    const [stR, sigR] = await Promise.all([
+      fetch('/api/command/status'),
+      fetch('/api/command/signals?limit=15')
+    ]);
+    const st  = await stR.json();
+    const sig = await sigR.json();
+
+    const lvl = st.alert_level || 'NO_ACTION';
+    document.getElementById('sAlert').textContent = alertEmoji(lvl)+' '+lvl;
+    document.getElementById('sPrice').textContent = st.market_odds ? st.market_odds+'¢' : '—';
+
+    if (lvl === 'URGENT') {
+      document.getElementById('alertBanner').classList.add('show');
+      const top = (st.top_signals||[])[0];
+      if (top) {
+        document.getElementById('alertBannerText').textContent = '🚨 URGENT: ' + top.headline;
+        document.getElementById('alertBannerSub').textContent  = 'Source: '+top.source_app+' · Confidence: '+top.confidence_score;
       }
+    } else {
+      document.getElementById('alertBanner').classList.remove('show');
+    }
+
+    const signals = Array.isArray(sig) ? sig : (sig.signals||[]);
+    const feed = document.getElementById('alertFeed');
+    if (!signals.length) { feed.innerHTML = '<div class="loading">No signals yet</div>'; return; }
+
+    feed.innerHTML = signals.slice(0,10).map(s => {
+      const cls = s.importance_score>=80 ? 'alert-item' :
+                  s.importance_score>=60 ? 'alert-item important' : 'alert-item digest';
+      const dirC = {bullish:'#22c55e',bearish:'#ef4444',neutral:'#64748b'}[s.signal_direction]||'#64748b';
+      return `<div class="${cls}">
+        <div class="al-head">${highlightKws(escHtml(s.headline||''))}</div>
+        <div class="al-meta">
+          <span style="color:${dirC}">${(s.signal_direction||'').toUpperCase()}</span>
+          · ${s.source_app||'?'} · I:${s.importance_score} · ${relTime(s.timestamp)}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('alertFeed').innerHTML = `<div class="loading">Feed error</div>`;
+  }
+}
+
+// ── Keywords ──────────────────────────────────────────────────────────────────
+function buildKeywords() {
+  const g = document.getElementById('kwGrid');
+  g.innerHTML = ALL_KWS.map(k =>
+    `<span class="kw-chip ${TIER1.includes(k)?'hot':''}" id="kw-${k.replace(/\s+/g,'_')}">${k}</span>`
+  ).join('');
+}
+
+async function refreshKeywordHeat() {
+  try {
+    const r = await fetch('/api/command/signals?limit=40');
+    const d = await r.json();
+    const signals = Array.isArray(d) ? d : (d.signals||[]);
+    const text = signals.map(s=>((s.headline||'')+' '+(s.raw_text||'')).toLowerCase()).join(' ');
+    ALL_KWS.forEach(k => {
+      const el = document.getElementById('kw-'+k.replace(/\s+/g,'_'));
+      if (el && !TIER1.includes(k)) el.classList.toggle('hot', text.includes(k));
     });
   } catch{}
+}
+
+// ── Channel roster ────────────────────────────────────────────────────────────
+function buildRoster() {
+  document.getElementById('channelRoster').innerHTML = CHANNELS.map(ch => `
+    <div class="roster-item">
+      <div class="roster-icon">${ch.icon||'📺'}</div>
+      <div>
+        <div class="roster-name">${ch.name}${ch.priority?' ⭐':''}</div>
+        <div class="roster-status live">● 24/7 Live</div>
+      </div>
+      <button class="watch-btn" onclick="watchChannel('${ch.id}','${ch.name}')">Watch</button>
+    </div>`).join('');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function highlightKws(text) {
+  const kws=['iran','attack','strike','boots','military','troops','urgent','breaking',
+             'missile','nuclear','war','crisis','irgc','khamenei'];
+  let out=text;
+  kws.forEach(k=>{ out=out.replace(new RegExp(`(${k})`,'gi'),'<span class="kw-hit">$1</span>'); });
+  return out;
+}
+function alertEmoji(l) {
+  return {URGENT:'🚨',IMPORTANT:'⚠️',DIGEST:'📋',NO_ACTION:'✅'}[l]||'—';
+}
+function relTime(ts) {
+  if(!ts) return '—';
+  try {
+    const d=(Date.now()-new Date(ts).getTime())/1000;
+    if(d<60)  return Math.round(d)+'s ago';
+    if(d<3600) return Math.round(d/60)+'m ago';
+    return Math.round(d/3600)+'h ago';
+  } catch{ return '—'; }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 buildKeywords();
 buildRoster();
-loadLiveStreams();
+loadMonitorStatus();
 loadAlertFeed();
-loadStats();
-highlightHotKeywords();
+refreshKeywordHeat();
 
-// Refresh cycles
-setInterval(loadAlertFeed, 30000);      // signals every 30s
-setInterval(loadLiveStreams, 300000);   // streams every 5min
-setInterval(highlightHotKeywords, 60000);
+setInterval(loadAlertFeed,    30000);
+setInterval(loadMonitorStatus,60000);
+setInterval(refreshKeywordHeat,90000);
 </script>
 </body>
 </html>
