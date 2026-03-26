@@ -763,6 +763,14 @@ def api_iran_volatility_summary():
 
     now = _dt.now(_tz.utc)
 
+    # Always inject the current live price as the most recent point so windows
+    # reflect real-time reality even if the collector hasn't snapped yet.
+    live_snap = {
+        "timestamp": now.isoformat(),
+        "yes_price": market.yes_price,
+    }
+    all_snaps = list(all_snaps) + [live_snap]
+
     def _window(hours: int):
         cutoff = now - _td(hours=hours)
         pts = []
@@ -847,6 +855,7 @@ def api_iran_volatility_summary():
         }
 
     # Recent price series for chart (last 24h, max 200 points)
+    # all_snaps already includes the live_snap appended above, so chart is current
     chart_snaps = []
     cutoff_24h = now - _td(hours=24)
     for s in all_snaps:
@@ -857,7 +866,11 @@ def api_iran_volatility_summary():
                 chart_snaps.append({"t": ts_raw, "p": round(float(s["yes_price"]) * 100, 2)})
         except Exception:
             pass
-    chart_snaps = chart_snaps[-200:]
+    # Deduplicate by timestamp, keep last occurrence (live snap wins)
+    seen = {}
+    for pt in chart_snaps:
+        seen[pt["t"][:16]] = pt   # minute-level dedup key
+    chart_snaps = sorted(seen.values(), key=lambda x: x["t"])[-200:]
 
     return {
         "market_id": market_id,
