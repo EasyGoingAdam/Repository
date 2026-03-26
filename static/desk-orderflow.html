@@ -99,6 +99,7 @@
   <a href="/beacon"      class="desk-nav-item">📡 Beacon</a>
   <a href="/market-desk" class="desk-nav-item">📊 Market</a>
   <a href="/orderflow"   class="desk-nav-item active">📈 OrderFlow</a>
+  <a href="/volatility"  class="desk-nav-item">⚡ Volatility</a>
   <div class="nav-spacer"></div>
   <a href="/" class="desk-nav-item" style="opacity:.55">← Dashboard</a>
 </nav>
@@ -328,8 +329,21 @@ async function loadHistory() {
   try {
     const d = await api(`/api/orderbook/history?hours=${hours}&range=0.12`);
     const snaps = d.snapshots||[];
-    if(!snaps.length) return;
+    const ctx = document.getElementById('obChart').getContext('2d');
+    if(obChartInst){ obChartInst.destroy(); obChartInst=null; }
 
+    if(!snaps.length) {
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.fillStyle = '#64748b';
+      ctx.textAlign = 'center';
+      ctx.font = '13px "Courier New", monospace';
+      ctx.fillText('Collecting data — snapshots taken every 2 min', ctx.canvas.width/2, ctx.canvas.height/2 - 10);
+      ctx.font = '11px "Courier New", monospace';
+      ctx.fillText('Check back shortly', ctx.canvas.width/2, ctx.canvas.height/2 + 12);
+      return;
+    }
+
+    const sparse = snaps.length < 15;
     const avgBid = snaps.reduce((a,s)=>a+s.bid_depth,0)/snaps.length;
     const avgAsk = snaps.reduce((a,s)=>a+s.ask_depth,0)/snaps.length;
     document.getElementById('avgBid').textContent = fmtMoney(avgBid);
@@ -339,13 +353,11 @@ async function loadHistory() {
     const bidData  = snaps.map(s=>s.bid_depth);
     const askData  = snaps.map(s=>s.ask_depth);
     const priceData= snaps.map(s=>(s.yes_price||0)*100);
-    const ctx = document.getElementById('obChart').getContext('2d');
-    if(obChartInst) obChartInst.destroy();
     obChartInst = new Chart(ctx,{
       data:{labels,datasets:[
-        {type:'line',label:'Bid $',data:bidData,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',borderWidth:2,pointRadius:0,fill:true,tension:.3,yAxisID:'yD'},
-        {type:'line',label:'Ask $',data:askData,borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.1)',borderWidth:2,pointRadius:0,fill:true,tension:.3,yAxisID:'yD'},
-        {type:'line',label:'YES %',data:priceData,borderColor:'#3b82f6',backgroundColor:'transparent',borderWidth:1.5,borderDash:[4,3],pointRadius:0,tension:.3,yAxisID:'yP'},
+        {type:'line',label:'Bid $',data:bidData,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',borderWidth:2,pointRadius:sparse?4:0,pointBackgroundColor:'#22c55e',fill:true,tension:sparse?0:.3,yAxisID:'yD'},
+        {type:'line',label:'Ask $',data:askData,borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.1)',borderWidth:2,pointRadius:sparse?4:0,pointBackgroundColor:'#ef4444',fill:true,tension:sparse?0:.3,yAxisID:'yD'},
+        {type:'line',label:'YES %',data:priceData,borderColor:'#3b82f6',backgroundColor:'transparent',borderWidth:1.5,borderDash:[4,3],pointRadius:sparse?3:0,pointBackgroundColor:'#3b82f6',tension:sparse?0:.3,yAxisID:'yP'},
       ]},
       options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
         plugins:{legend:{display:true,position:'top',labels:{color:'#64748b',font:{size:10},boxWidth:10,padding:10}},

@@ -24,6 +24,7 @@ from intelligence.signals import (
     store_orderbook_snapshot, get_orderbook_snapshots,
     get_managed_watchlist, get_all_latest_prices, get_price_snapshots,
     get_all_latest_volatility, get_active_trading_signals as db_get_active_signals,
+    add_subscriber, get_active_subscribers, update_last_sms,
 )
 from intelligence.pulse import run_pulse_cycle
 from intelligence.beacon import run_beacon_cycle
@@ -106,7 +107,14 @@ def _intel_loop():
 
             # Twitter (Pulse) + Command every cycle
             run_pulse_cycle()
-            run_command_cycle()
+            cmd_state = run_command_cycle()
+
+            # ── SMS alert if URGENT or IMPORTANT ──────────────────────────────
+            alert_lvl = cmd_state.get("alert_level", "")
+            if alert_lvl in ("URGENT", "IMPORTANT"):
+                top_sigs = cmd_state.get("top_signals", [])
+                headline = top_sigs[0].get("headline", "") if top_sigs else cmd_state.get("reason_summary", "")
+                send_alert_sms(alert_lvl, headline, cmd_state.get("market_odds"))
 
         except Exception as e:
             print(f"[Intel] Loop error: {e}")
@@ -677,6 +685,141 @@ def api_all_latest_prices():
     return {"prices": prices, "count": len(prices)}
 
 
+@app.get("/api/volatility/iran/summary")
+def api_iran_volatility_summary():
+    """
+    Comprehensive volatility summary for the Iran YES market.
+    Returns high/low/range/change across 1h, 8h, 24h, 7d windows
+    plus Bollinger bands, z-score, and a limit-price recommendation.
+    """
+    import statistics as _stats
+    from datetime import timedelta as _td
+
+    market = polyapi.find_iran_boots_market()
+    if not market:
+        raise HTTPException(status_code=404, detail="Market not found")
+
+    # Resolve market_id in the watchlist DB
+    watchlist = get_managed_watchlist()
+    iran_entry = next(
+        (w for w in watchlist
+         if "iran" in (w.get("question","") + w.get("slug","")).lower()),
+        None
+    )
+    market_id = iran_entry["market_id"] if iran_entry else market.id
+
+    # Fetch 7 days of price snapshots
+    all_snaps = get_price_snapshots(market_id, hours=168)
+
+    now = datetime.now(timezone.utc)
+
+    def _window(hours: int):
+        cutoff = now - timedelta(hours=hours)
+        pts = []
+        for s in all_snaps:
+            ts_raw = s.get("timestamp", "")
+            try:
+                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                if ts >= cutoff and s.get("yes_price") is not None:
+                    pts.append({"ts": ts, "p": float(s["yes_price"])})
+            except Exception:
+                pass
+        if not pts:
+            return None
+        prices = [x["p"] for x in pts]
+        mean = sum(prices) / len(prices)
+        std  = _stats.stdev(prices) if len(prices) > 1 else 0.0
+        first, last = prices[0], prices[-1]
+        chg = last - first
+        return {
+            "high":             round(max(prices) * 100, 2),
+            "low":              round(min(prices) * 100, 2),
+            "mean":             round(mean * 100, 2),
+            "std_dev_pct":      round(std * 100, 2),
+            "range_pct":        round((max(prices) - min(prices)) * 100, 2),
+            "change_pct":       round(chg * 100, 2),
+            "bollinger_upper":  round((mean + 2 * std) * 100, 2),
+            "bollinger_lower":  round(max(0, mean - 2 * std) * 100, 2),
+            "z_score":          round((last - mean) / std, 3) if std > 0.001 else 0.0,
+            "points":           len(prices),
+        }
+
+    windows = {
+        "1h":  _window(1),
+        "8h":  _window(8),
+        "24h": _window(24),
+        "7d":  _window(168),
+    }
+
+    cur = market.yes_price
+    cur_pct = round(cur * 100, 2)
+
+    # ── Limit-price recommendation ────────────────────────────────────────────
+    # Use 24h window as primary signal; fall back to 8h or 1h
+    ref = windows.get("24h") or windows.get("8h") or windows.get("1h")
+    rec = {"timing": "insufficient_data", "suggested_limit": None, "reasoning": "Not enough price history yet."}
+    if ref:
+        z = ref["z_score"]
+        std = ref["std_dev_pct"]
+        mean = ref["mean"]
+        boll_lo = ref["bollinger_lower"]
+        boll_hi = ref["bollinger_upper"]
+
+        if z < -2.0:
+            timing = "strong_buy"
+            limit  = round(cur_pct + 0.3, 2)      # near market — will fill fast
+            reason = f"Price is {abs(z):.1f}σ below 24h mean ({mean:.1f}¢). Very underpriced vs historical range. Buy at or near market."
+        elif z < -1.0:
+            timing = "buy"
+            limit  = round(max(boll_lo, cur_pct - std * 0.5), 2)
+            reason = f"Price is {abs(z):.1f}σ below mean. Pull limit slightly below market to capture intra-day dip."
+        elif z < 0:
+            timing = "mild_buy"
+            limit  = round(cur_pct - std * 0.8, 2)
+            reason = f"Price slightly below 24h mean. Set limit ~{std*0.8:.1f}¢ below current to catch a dip."
+        elif z < 1.0:
+            timing = "neutral_wait"
+            limit  = round(mean - std * 0.5, 2)
+            reason = f"Price near fair value. Be patient — set limit near 24h mean ({mean:.1f}¢) to save vs current."
+        else:
+            timing = "overpriced_wait"
+            limit  = round(mean, 2)
+            reason = f"Price {z:.1f}σ ABOVE 24h mean. Likely to revert. Target limit near mean ({mean:.1f}¢)."
+
+        rec = {
+            "timing": timing,
+            "suggested_limit": limit,
+            "reasoning": reason,
+            "bollinger_lower": boll_lo,
+            "bollinger_upper": boll_hi,
+            "mean_24h": mean,
+            "z_score_24h": z,
+        }
+
+    # Recent price series for chart (last 24h, max 200 points)
+    chart_snaps = []
+    cutoff_24h = now - timedelta(hours=24)
+    for s in all_snaps:
+        ts_raw = s.get("timestamp", "")
+        try:
+            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            if ts >= cutoff_24h and s.get("yes_price") is not None:
+                chart_snaps.append({"t": ts_raw, "p": round(float(s["yes_price"]) * 100, 2)})
+        except Exception:
+            pass
+    chart_snaps = chart_snaps[-200:]
+
+    return {
+        "market_id": market_id,
+        "question":  market.question,
+        "current_price_pct": cur_pct,
+        "windows": windows,
+        "recommendation": rec,
+        "chart": chart_snaps,
+        "snapshot_count": len(all_snaps),
+    }
+
+
 @app.get("/api/volatility/{market_id}")
 def api_volatility(market_id: str):
     summary = volmod.get_market_volatility_summary(market_id)
@@ -795,6 +938,107 @@ def api_dashboard():
     }
 
 
+# ── SMS / Twilio ──────────────────────────────────────────────────────────────
+
+class SubscribeRequest(BaseModel):
+    phone: str
+
+
+def _send_sms(to: str, body: str) -> bool:
+    """Send SMS via Twilio. Returns True on success."""
+    sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    from_ = os.environ.get("TWILIO_FROM_NUMBER", "")
+    if not sid or not token or not from_:
+        print(f"[SMS] Twilio not configured — would send to {to}: {body[:60]}")
+        return False
+    try:
+        import requests as req
+        r = req.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+            auth=(sid, token),
+            data={"From": from_, "To": to, "Body": body},
+            timeout=10,
+        )
+        if r.status_code in (200, 201):
+            print(f"[SMS] Sent to {to[:6]}***")
+            return True
+        else:
+            print(f"[SMS] Twilio error {r.status_code}: {r.text[:200]}")
+            return False
+    except Exception as e:
+        print(f"[SMS] Exception: {e}")
+        return False
+
+
+def send_alert_sms(alert_level: str, headline: str, odds=None):
+    """
+    Send an SMS alert to all active subscribers.
+    Respects a 30-minute cooldown per subscriber to avoid spam.
+    """
+    from datetime import timedelta as _td
+    subscribers = get_active_subscribers()
+    if not subscribers:
+        return
+
+    price_str = f"{odds:.1f}¢ YES" if odds else "—"
+    emoji = "🚨" if alert_level == "URGENT" else "⚠️"
+    body = (
+        f"{emoji} FIRST STRIKE {alert_level}\n"
+        f"{headline[:120]}\n"
+        f"Market: {price_str}\n"
+        f"firststrikeapp.com | Reply STOP to unsubscribe"
+    )
+
+    now = datetime.now(timezone.utc)
+    cooldown = _td(minutes=30)
+
+    for sub in subscribers:
+        last = sub.get("last_sms_at")
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                if now - last_dt < cooldown:
+                    continue
+            except Exception:
+                pass
+        ok = _send_sms(sub["phone"], body)
+        if ok:
+            update_last_sms(sub["phone"])
+
+
+@app.post("/api/subscribe")
+def api_subscribe(req: SubscribeRequest):
+    """Subscribe a phone number to SMS alerts."""
+    phone = (req.phone or "").strip()
+    if not phone:
+        return {"subscribed": False, "error": "Phone number required"}
+    # Basic sanity: must start with + and be at least 8 chars
+    if len(phone) < 8:
+        return {"subscribed": False, "error": "Invalid phone number"}
+    result = add_subscriber(phone)
+    return result
+
+
+@app.get("/api/subscribers")
+def api_subscribers():
+    """Admin: list all SMS subscribers."""
+    subs = get_active_subscribers()
+    # Mask phone numbers partially for display
+    masked = [
+        {**s, "phone": s["phone"][:4] + "****" + s["phone"][-2:]}
+        for s in subs
+    ]
+    return {"subscribers": masked, "count": len(subs)}
+
+
+@app.post("/api/sms/test")
+def api_sms_test():
+    """Admin: fire a test SMS to all subscribers."""
+    send_alert_sms("URGENT", "Test alert — First Strike SMS system is operational.", 70.5)
+    return {"triggered": True, "recipient_count": len(get_active_subscribers())}
+
+
 # ── Pages ─────────────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -830,6 +1074,15 @@ def orderflow_desk():
     with open(Path(__file__).parent / "static" / "desk-orderflow.html") as f:
         return f.read()
 
+@app.get("/volatility", response_class=HTMLResponse)
+def volatility_desk():
+    with open(Path(__file__).parent / "static" / "desk-volatility.html") as f:
+        return f.read()
+
+@app.get("/historian", response_class=HTMLResponse)
+def historian_desk():
+    with open(Path(__file__).parent / "static" / "desk-historian.html") as f:
+        return f.read()
 
 @app.get("/markets", response_class=HTMLResponse)
 def multi_market_dashboard():

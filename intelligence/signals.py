@@ -184,6 +184,57 @@ def init_db():
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tsig_market ON trading_signals(market_id, unix_ts)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sms_subscribers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT NOT NULL UNIQUE,
+            subscribed_at TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            last_sms_at TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+# ── SMS Subscriber CRUD ────────────────────────────────────────────────────────
+
+def add_subscriber(phone: str) -> dict:
+    """Add a phone number to the SMS subscriber list. Returns {subscribed, already_subscribed}."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO sms_subscribers (phone, subscribed_at, active) VALUES (?, ?, 1)",
+            (phone, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        return {"subscribed": True, "already_subscribed": False}
+    except sqlite3.IntegrityError:
+        # Already exists — reactivate if previously unsubscribed
+        conn.execute("UPDATE sms_subscribers SET active=1 WHERE phone=?", (phone,))
+        conn.commit()
+        return {"subscribed": False, "already_subscribed": True}
+    finally:
+        conn.close()
+
+
+def get_active_subscribers() -> list:
+    """Return all active SMS subscribers."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT id, phone, subscribed_at, last_sms_at FROM sms_subscribers WHERE active=1 ORDER BY subscribed_at DESC"
+    ).fetchall()
+    conn.close()
+    return [{"id": r[0], "phone": r[1], "subscribed_at": r[2], "last_sms_at": r[3]} for r in rows]
+
+
+def update_last_sms(phone: str):
+    """Record when we last sent an SMS to this subscriber."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE sms_subscribers SET last_sms_at=? WHERE phone=?",
+        (datetime.now(timezone.utc).isoformat(), phone),
+    )
     conn.commit()
     conn.close()
 

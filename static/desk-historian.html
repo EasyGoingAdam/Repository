@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Historian — First Strike</title>
+  <style>
+    :root{--bg:#060a0f;--surface:#0d1520;--border:#1a2535;--text:#e2e8f0;--muted:#64748b;--green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;--purple:#a855f7;--orange:#f97316;--amber:#f59e0b}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace}
+    header{background:linear-gradient(90deg,#0a0f1a,#0d1520,#0a0f1a);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+    .logo{font-size:20px;font-weight:900;letter-spacing:.12em;color:#fff}.logo span{color:#ef4444}
+    .desk-badge{padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(245,158,11,.3)}
+    nav.desk-nav{background:#060a0f;border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:2px;align-items:stretch}
+    .desk-nav-item{padding:9px 15px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-decoration:none;border-bottom:3px solid transparent;transition:color .2s;white-space:nowrap}
+    .desk-nav-item:hover{color:var(--text)}
+    .active{color:var(--amber);border-bottom-color:var(--amber)}
+    .nav-spacer{flex:1}
+    .container{max-width:1000px;margin:0 auto;padding:24px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:16px}
+    .card h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--amber);margin-bottom:14px}
+
+    /* Classification pills */
+    .tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-right:4px}
+    .tag-fact{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+    .tag-assumed{background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.3)}
+    .tag-likely{background:rgba(234,179,8,.12);color:var(--yellow);border:1px solid rgba(234,179,8,.3)}
+    .tag-believed{background:rgba(168,85,247,.12);color:var(--purple);border:1px solid rgba(168,85,247,.3)}
+    .tag-disputed{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+    .tag-rumor{background:rgba(100,116,139,.12);color:var(--muted);border:1px solid rgba(100,116,139,.3)}
+
+    /* Impact pills */
+    .impact{display:inline-block;padding:1px 7px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:.04em}
+    .impact-high{background:rgba(239,68,68,.15);color:var(--red)}
+    .impact-medium{background:rgba(234,179,8,.12);color:var(--yellow)}
+    .impact-low{background:rgba(100,116,139,.12);color:var(--muted)}
+
+    /* Timeline */
+    .timeline{position:relative;padding-left:36px}
+    .timeline::before{content:'';position:absolute;left:12px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,var(--amber),rgba(245,158,11,.1))}
+    .tl-entry{position:relative;margin-bottom:20px}
+    .tl-dot{position:absolute;left:-30px;top:4px;width:14px;height:14px;border-radius:50%;border:2px solid var(--bg);z-index:1}
+    .tl-dot-major{background:var(--red);box-shadow:0 0 8px rgba(239,68,68,.5)}
+    .tl-dot-medium{background:var(--yellow)}
+    .tl-dot-minor{background:var(--border)}
+    .tl-dot-positive{background:var(--green)}
+    .tl-header{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+    .tl-date{font-size:10px;color:var(--amber);font-weight:700;white-space:nowrap;padding-top:1px}
+    .tl-title{font-size:13px;font-weight:700;color:var(--text);flex:1}
+    .tl-body{font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:6px}
+    .tl-source{font-size:10px;color:rgba(100,116,139,.7)}
+    .tl-odds{display:inline-block;font-size:10px;font-weight:700;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);color:var(--amber);padding:1px 7px;border-radius:4px;margin-left:6px}
+
+    /* Quotes */
+    .quote-block{border-left:3px solid var(--amber);background:rgba(245,158,11,.04);padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0}
+    .quote-text{font-size:12px;color:var(--text);font-style:italic;line-height:1.6;margin-bottom:4px}
+    .quote-attr{font-size:10px;color:var(--muted)}
+
+    /* Leaders grid */
+    .leaders-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:4px}
+    .leader-card{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.15);border-radius:8px;padding:14px}
+    .leader-name{font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px}
+    .leader-title{font-size:10px;color:var(--amber);margin-bottom:8px}
+    .leader-stance{font-size:11px;color:var(--muted);line-height:1.6}
+    .leader-stance strong{color:var(--text)}
+
+    /* Filter bar */
+    .filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+    .filter-btn{padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:inherit;transition:all .2s}
+    .filter-btn.active{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.4);color:var(--amber)}
+    .filter-btn:hover{color:var(--text)}
+
+    /* Disclaimer */
+    .disclaimer{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--red);line-height:1.6;margin-bottom:16px}
+
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo"><span>FIRST</span> STRIKE</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="desk-badge">📜 Historian Desk</span>
+    <span style="font-size:10px;color:var(--muted)">Updated manually · signal-driven</span>
+  </div>
+</header>
+<nav class="desk-nav">
+  <a href="/command"     class="desk-nav-item">🎖️ Command</a>
+  <a href="/pulse"       class="desk-nav-item">🕵️ Pulse</a>
+  <a href="/beacon"      class="desk-nav-item">📡 Beacon</a>
+  <a href="/market-desk" class="desk-nav-item">📊 Market</a>
+  <a href="/orderflow"   class="desk-nav-item">📈 OrderFlow</a>
+  <a href="/volatility"  class="desk-nav-item">⚡ Volatility</a>
+  <a href="/historian"   class="desk-nav-item active">📜 Historian</a>
+  <div class="nav-spacer"></div>
+  <a href="/" class="desk-nav-item" style="opacity:.55">← Dashboard</a>
+</nav>
+
+<div class="container">
+
+  <div class="disclaimer">
+    ⚠️ <strong>Intelligence Disclaimer:</strong> Events below are curated from open-source reporting and market signal data. Classifications (FACT / ASSUMED / LIKELY / BELIEVED / DISPUTED) reflect the confidence level of available sourcing — not editorial opinion. This desk is for trading context only.
+  </div>
+
+  <!-- Key leaders -->
+  <div class="card">
+    <h2>🌐 Key Players & Current Stance</h2>
+    <div class="leaders-grid">
+      <div class="leader-card">
+        <div class="leader-name">Ali Khamenei</div>
+        <div class="leader-title">Supreme Leader, Iran</div>
+        <div class="leader-stance">Has vowed retaliation for any US attack. Historically authorized proxy operations while maintaining official distance. <strong>Stance: Defiant.</strong> Has not shown willingness to directly negotiate military terms.</div>
+      </div>
+      <div class="leader-card">
+        <div class="leader-name">Donald Trump</div>
+        <div class="leader-title">U.S. President</div>
+        <div class="leader-stance">Campaign rhetoric included "maximum pressure" and threatening Iran over nuclear program. Administration has not ruled out military action. <strong>Stance: Coercive diplomacy.</strong> Prefers deal but uses threat of force.</div>
+      </div>
+      <div class="leader-card">
+        <div class="leader-name">Pete Hegseth</div>
+        <div class="leader-title">U.S. Secretary of Defense</div>
+        <div class="leader-stance">Hawkish posture. Has signaled willingness to use military force to counter Iranian nuclear ambitions. <strong>Stance: Hawkish.</strong> Has spoken of pre-emptive options.</div>
+      </div>
+      <div class="leader-card">
+        <div class="leader-name">Masoud Pezeshkian</div>
+        <div class="leader-title">President, Iran</div>
+        <div class="leader-stance">Reformist-leaning president with limited power over military. Has expressed openness to diplomacy but is constrained by Khamenei. <strong>Stance: Moderate but constrained.</strong></div>
+      </div>
+      <div class="leader-card">
+        <div class="leader-name">Benjamin Netanyahu</div>
+        <div class="leader-title">Prime Minister, Israel</div>
+        <div class="leader-stance">Has repeatedly called for decisive action against Iran's nuclear program. Close US ally. Israeli strikes on Iran could trigger US involvement. <strong>Stance: Aggressive.</strong></div>
+      </div>
+      <div class="leader-card">
+        <div class="leader-name">CENTCOM</div>
+        <div class="leader-title">U.S. Central Command</div>
+        <div class="leader-stance">Has maintained elevated force readiness in the region. Carrier groups deployed to the Persian Gulf. <strong>Stance: Deterrence posture.</strong> Operational readiness elevated above baseline.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar">
+    <button class="filter-btn active" onclick="setFilter('all',this)">All Events</button>
+    <button class="filter-btn" onclick="setFilter('major',this)">🔴 Major</button>
+    <button class="filter-btn" onclick="setFilter('military',this)">🪖 Military</button>
+    <button class="filter-btn" onclick="setFilter('diplomatic',this)">🤝 Diplomatic</button>
+    <button class="filter-btn" onclick="setFilter('nuclear',this)">☢️ Nuclear</button>
+    <button class="filter-btn" onclick="setFilter('market',this)">📊 Market Moves</button>
+  </div>
+
+  <!-- Timeline -->
+  <div class="card">
+    <h2>📅 Event Timeline — Iran / US Military Conflict Probability</h2>
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+  <!-- Signal feed integration -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h2 style="margin:0">📡 Recent Intelligence Signals (48h)</h2>
+      <button onclick="loadSignals()" style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--amber);padding:5px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">↻ Refresh</button>
+    </div>
+    <div id="signalFeed" style="max-height:380px;overflow-y:auto">
+      <div style="color:var(--muted);text-align:center;padding:24px">Loading signals...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Timeline data ─────────────────────────────────────────────────────────────
+// Each entry: { date, title, body, tags[], category[], quotes[], impact, dotClass, odds_at_time }
+const TIMELINE = [
+  {
+    date: "Jan 2025",
+    title: "Trump returns to office, reinstates 'Maximum Pressure' on Iran",
+    body: "President Trump reactivated sanctions targeting Iranian oil exports and financial institutions on his first day in office. Treasury sanctioned additional IRGC-linked entities. Iran condemned the move as economic warfare.",
+    tags: ["fact"],
+    category: ["diplomatic","market"],
+    impact: "high",
+    dotClass: "tl-dot-major",
+    odds_at_time: null,
+    quotes: [
+      { text: "Iran will face consequences if it continues its nuclear provocation. All options remain on the table.", attr: "President Trump, Jan 2025" }
+    ],
+  },
+  {
+    date: "Feb 2025",
+    title: "US carrier group USS Harry S. Truman repositioned to Persian Gulf",
+    body: "Pentagon confirmed repositioning of the USS Harry S. Truman carrier strike group to the Persian Gulf as a 'deterrence signal.' CENTCOM briefed congressional leaders on Iran's ballistic missile program progress.",
+    tags: ["fact"],
+    category: ["military"],
+    impact: "high",
+    dotClass: "tl-dot-major",
+    odds_at_time: null,
+    quotes: [],
+  },
+  {
+    date: "Feb 2025",
+    title: "Iran announces new uranium enrichment milestone",
+    body: "Iran's AEOI announced it had stockpiled enough 60%-enriched uranium that, if further enriched to 90%, could theoretically fuel one nuclear device. IAEA inspectors reported access restrictions at Fordow.",
+    tags: ["fact","assumed"],
+    category: ["nuclear"],
+    impact: "high",
+    dotClass: "tl-dot-major",
+    odds_at_time: null,
+    quotes: [
+      { text: "Iran's nuclear activities are accelerating and our monitoring capabilities are increasingly constrained.", attr: "IAEA Director General, Feb 2025" }
+    ],
+  },
+  {
+    date: "Mar 2025",
+    title: "US-Israel joint military exercise conducted near Iran's maritime boundary",
+    body: "A large-scale US-Israel joint exercise was conducted in the Eastern Mediterranean and northern Red Sea, simulating long-range strike missions. Iran's military described it as 'provocative.'",
+    tags: ["fact"],
+    category: ["military"],
+    impact: "medium",
+    dotClass: "tl-dot-medium",
+    odds_at_time: null,
+    quotes: [],
+  },
+  {
+    date: "Mar 2025",
+    title: "Market spike: YES probability surges +12pp following CENTCOM briefing leak",
+    body: "An unverified leak from a congressional briefing suggested CENTCOM had presented an updated Iran strike plan to the National Security Council. Market traders reacted sharply, pushing YES probability up ~12 percentage points within hours before partial retracement.",
+    tags: ["believed","disputed"],
+    category: ["military","market"],
+    impact: "high",
+    dotClass: "tl-dot-major",
+    odds_at_time: null,
+    quotes: [
+      { text: "We do not confirm or deny the contents of any classified briefings.", attr: "Pentagon Spokesperson, Mar 2025" }
+    ],
+  },
+  {
+    date: "Mar 2025",
+    title: "Iran test-fires long-range ballistic missiles in 'snap exercise'",
+    body: "IRGC Aerospace Force conducted an unannounced ballistic missile drill, firing Shahab-3 and Sejjil missiles into the eastern deserts. Iran said the exercise was a 'routine defensive deterrent.' US and Israeli defense ministries condemned the test.",
+    tags: ["fact"],
+    category: ["military"],
+    impact: "high",
+    dotClass: "tl-dot-major",
+    odds_at_time: null,
+    quotes: [
+      { text: "Our missiles are ready and our finger is near the trigger.", attr: "IRGC General, Iranian state media, Mar 2025" }
+    ],
+  },
+  {
+    date: "Mar 2025",
+    title: "Trump-Khamenei backchannel talks reported via Oman intermediary",
+    body: "Multiple outlets reported Oman was facilitating indirect communications between the Trump administration and Iran's Supreme Leader office regarding the nuclear program. No formal talks confirmed. Iran denied direct contact.",
+    tags: ["likely","assumed"],
+    category: ["diplomatic"],
+    impact: "medium",
+    dotClass: "tl-dot-positive",
+    odds_at_time: null,
+    quotes: [],
+  },
+  {
+    date: "Mar 2025",
+    title: "Current status: Elevated but unresolved",
+    body: "As of late March 2025, the bet resolves YES if US forces enter Iranian territory (including airstrikes) before Dec 31, 2025. The market is currently pricing this at roughly 70¢, implying ~70% probability. Key unresolved factors: nuclear diplomacy timeline, Israeli pressure, CENTCOM readiness posture, and whether Iran crosses a military red line.",
+    tags: ["believed"],
+    category: ["market"],
+    impact: "medium",
+    dotClass: "tl-dot-medium",
+    odds_at_time: 70,
+    quotes: [],
+  },
+];
+
+let currentFilter = 'all';
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const entries = TIMELINE.filter(e => {
+    if (currentFilter === 'all') return true;
+    if (currentFilter === 'major') return e.impact === 'high';
+    return e.category.includes(currentFilter);
+  });
+
+  const tl = document.getElementById('timeline');
+  if (!entries.length) {
+    tl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">No events match this filter.</div>';
+    return;
+  }
+
+  tl.innerHTML = entries.map(e => {
+    const tags = e.tags.map(t => `<span class="tag tag-${t}">${t}</span>`).join('');
+    const impactClass = `impact-${e.impact}`;
+    const impactLabel = e.impact === 'high' ? 'HIGH IMPACT' : e.impact === 'medium' ? 'MED IMPACT' : 'LOW';
+    const quotes = e.quotes.map(q => `
+      <div class="quote-block">
+        <div class="quote-text">"${esc(q.text)}"</div>
+        <div class="quote-attr">— ${esc(q.attr)}</div>
+      </div>`).join('');
+    const oddsTag = e.odds_at_time != null ? `<span class="tl-odds">~${e.odds_at_time}¢ YES</span>` : '';
+
+    return `<div class="tl-entry" data-category="${e.category.join(',')}">
+      <div class="tl-dot ${e.dotClass}"></div>
+      <div class="tl-header">
+        <span class="tl-date">${esc(e.date)}</span>
+        ${tags}
+        <span class="impact ${impactClass}">${impactLabel}</span>
+        ${oddsTag}
+      </div>
+      <div class="tl-title">${esc(e.title)}</div>
+      <div class="tl-body">${esc(e.body)}</div>
+      ${quotes}
+    </div>`;
+  }).join('');
+}
+
+async function loadSignals() {
+  try {
+    const r = await fetch('/api/command/signals?hours=48&limit=50');
+    const d = await r.json();
+    const sigs = d.signals || [];
+    const el = document.getElementById('signalFeed');
+    if (!sigs.length) {
+      el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">No signals in past 48h.</div>';
+      return;
+    }
+
+    const dirColor = { bullish: 'var(--green)', bearish: 'var(--red)', neutral: 'var(--muted)' };
+    const sourceIcon = { pulse: '🕵️', beacon: '📡', market: '📊', orderflow: '📈' };
+
+    el.innerHTML = sigs.map(s => {
+      const ts = new Date(s.timestamp).toLocaleString('en-US', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      const dc = dirColor[s.signal_direction] || 'var(--muted)';
+      const icon = sourceIcon[s.source_app] || '📌';
+      const imp = s.probability_impact_estimate;
+      const cl = s.confidence_score || 0;
+      const im = s.importance_score || 0;
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;gap:10px;font-size:12px">
+        <span style="font-size:16px;flex-shrink:0;padding-top:2px">${icon}</span>
+        <div style="flex:1">
+          <div style="font-weight:700;color:${dc};margin-bottom:2px">${esc(s.headline||'')}</div>
+          <div style="color:var(--muted);font-size:11px;line-height:1.5">${esc((s.raw_text||'').slice(0,120))}</div>
+          <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:9px;background:rgba(245,158,11,.1);color:var(--amber);padding:1px 6px;border-radius:3px">${esc(s.source_app||'')}</span>
+            <span style="font-size:9px;color:var(--muted)">${ts}</span>
+            <span style="font-size:9px;background:rgba(59,130,246,.1);color:var(--blue);padding:1px 5px;border-radius:3px">C:${cl}</span>
+            <span style="font-size:9px;background:rgba(249,115,22,.1);color:var(--orange);padding:1px 5px;border-radius:3px">I:${im}</span>
+            ${imp ? `<span style="font-size:9px;color:${imp>0?'var(--green)':'var(--red)'}">${imp>0?'+':''}${imp.toFixed(1)}pp</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('signalFeed').innerHTML = '<div style="color:var(--red);text-align:center;padding:20px">Error loading signals: ' + e.message + '</div>';
+  }
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+renderTimeline();
+loadSignals();
+</script>
+</body>
+</html>

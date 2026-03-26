@@ -68,7 +68,7 @@ def compute_all_volatility() -> dict:
     computed = 0
     skipped = 0
 
-    windows = [60, 360, 1440]  # 1h, 6h, 24h
+    windows = [60, 480, 1440, 10080]  # 1h, 8h, 24h, 7d
 
     for entry in watchlist:
         for window in windows:
