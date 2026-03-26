@@ -198,6 +198,15 @@ def init_db():
             last_sms_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS email_subscribers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            subscribed_at TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            last_email_at TEXT
+        )
+    """)
     # ── Tournament tables ──────────────────────────────────────────────────
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tournament_markets (
@@ -287,6 +296,55 @@ def update_last_sms(phone: str):
         "UPDATE sms_subscribers SET last_sms_at=? WHERE phone=?",
         (datetime.now(timezone.utc).isoformat(), phone),
     )
+    conn.commit()
+    conn.close()
+
+
+# ── Email Subscriber CRUD ──────────────────────────────────────────────────────
+
+def add_email_subscriber(email: str) -> dict:
+    """Add an email address to the subscriber list."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO email_subscribers (email, subscribed_at, active) VALUES (?, ?, 1)",
+            (email.lower().strip(), datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        return {"subscribed": True, "already_subscribed": False}
+    except sqlite3.IntegrityError:
+        conn.execute("UPDATE email_subscribers SET active=1 WHERE email=?", (email.lower().strip(),))
+        conn.commit()
+        return {"subscribed": False, "already_subscribed": True}
+    finally:
+        conn.close()
+
+
+def get_active_email_subscribers() -> list:
+    """Return all active email subscribers."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT id, email, subscribed_at, last_email_at FROM email_subscribers WHERE active=1 ORDER BY subscribed_at DESC"
+    ).fetchall()
+    conn.close()
+    return [{"id": r[0], "email": r[1], "subscribed_at": r[2], "last_email_at": r[3]} for r in rows]
+
+
+def update_last_email(email: str):
+    """Record when we last emailed this subscriber."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE email_subscribers SET last_email_at=? WHERE email=?",
+        (datetime.now(timezone.utc).isoformat(), email.lower().strip()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def unsubscribe_email(email: str):
+    """Mark an email subscriber as inactive (unsubscribe)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE email_subscribers SET active=0 WHERE email=?", (email.lower().strip(),))
     conn.commit()
     conn.close()
 

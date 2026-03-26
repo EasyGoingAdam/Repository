@@ -30,6 +30,7 @@ from intelligence.signals import (
     get_managed_watchlist, get_all_latest_prices, get_price_snapshots,
     get_all_latest_volatility, get_active_trading_signals as db_get_active_signals,
     add_subscriber, get_active_subscribers, update_last_sms,
+    add_email_subscriber, get_active_email_subscribers, update_last_email, unsubscribe_email,
 )
 from intelligence.pulse import run_pulse_cycle
 from intelligence.beacon import run_beacon_cycle
@@ -131,13 +132,13 @@ def _intel_loop():
             if alert_lvl in ("URGENT", "IMPORTANT"):
                 top_sigs = cmd_state.get("top_signals", [])
                 headline = top_sigs[0].get("headline", "") if top_sigs else cmd_state.get("reason_summary", "")
-                send_alert_sms(alert_lvl, headline, cmd_state.get("market_odds"))
+                send_alert_email(alert_lvl, headline, cmd_state.get("market_odds"))
 
             # ── Every 5 minutes (cycle % 2 == 1): video channel AI scan ──────
             if cycle % 2 == 1:
                 try:
                     vid_result = vidmon.run_video_monitor_cycle(
-                        send_sms_fn=send_alert_sms,
+                        send_sms_fn=send_alert_email,
                         store_signal_fn=store_signal,
                     )
                     if vid_result["alerts"]:
@@ -1004,62 +1005,125 @@ def api_dashboard():
 # ── SMS / Twilio ──────────────────────────────────────────────────────────────
 
 class SubscribeRequest(BaseModel):
-    phone: str
+    phone: str = ""      # kept for backward compat
+    email: str = ""
 
 
-def _send_sms(to: str, body: str) -> dict:
-    """Send SMS via Twilio. Returns dict with ok bool + debug info."""
-    sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
-    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-    from_ = os.environ.get("TWILIO_FROM_NUMBER", "")
-    if not sid or not token or not from_:
-        msg = f"Twilio not configured — sid={bool(sid)} token={bool(token)} from={bool(from_)}"
-        print(f"[SMS] {msg}")
+def _send_email(to_addr: str, subject: str, body_html: str) -> dict:
+    """
+    Send an HTML email via SMTP (default: Gmail).
+    Required env vars:
+      EMAIL_FROM      — sender address (e.g. alerts@gmail.com)
+      EMAIL_PASSWORD  — SMTP password / Gmail App Password
+    Optional:
+      SMTP_HOST       — default smtp.gmail.com
+      SMTP_PORT       — default 587
+    """
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    from_addr = os.environ.get("EMAIL_FROM", "")
+    password  = os.environ.get("EMAIL_PASSWORD", "")
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+
+    if not from_addr or not password:
+        msg = f"Email not configured — EMAIL_FROM={bool(from_addr)} EMAIL_PASSWORD={bool(password)}"
+        print(f"[Email] {msg}")
         return {"ok": False, "error": msg}
     try:
-        import requests as req
-        r = req.post(
-            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-            auth=(sid, token),
-            data={"From": from_, "To": to, "Body": body},
-            timeout=10,
-        )
-        if r.status_code in (200, 201):
-            print(f"[SMS] Sent to {to[:6]}***")
-            return {"ok": True, "status": r.status_code}
-        else:
-            err = r.text[:300]
-            print(f"[SMS] Twilio error {r.status_code}: {err}")
-            return {"ok": False, "status": r.status_code, "error": err}
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"First Strike Intelligence <{from_addr}>"
+        msg["To"]      = to_addr
+        msg.attach(MIMEText(body_html, "html"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(from_addr, password)
+            server.sendmail(from_addr, to_addr, msg.as_string())
+
+        print(f"[Email] Sent to {to_addr[:4]}***")
+        return {"ok": True}
     except Exception as e:
-        print(f"[SMS] Exception: {e}")
+        print(f"[Email] Exception: {e}")
         return {"ok": False, "error": str(e)}
 
 
-def send_alert_sms(alert_level: str, headline: str, odds=None):
+def _email_html(urgency_label: str, urgency_color: str, headline: str, price_str: str) -> str:
+    """Build a clean HTML email body for alerts."""
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#060a0f;font-family:'Courier New',monospace">
+  <div style="max-width:560px;margin:0 auto;padding:24px">
+    <div style="background:#0d1520;border:1px solid #1a2535;border-radius:10px;overflow:hidden">
+      <!-- Header -->
+      <div style="background:linear-gradient(90deg,#0a0f1a,#0d1520);padding:16px 24px;border-bottom:1px solid #1a2535">
+        <span style="font-size:18px;font-weight:900;letter-spacing:.12em;color:#fff">
+          <span style="color:#ef4444">FIRST</span> STRIKE
+        </span>
+        <span style="margin-left:12px;font-size:11px;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:2px 10px;border-radius:4px;font-weight:700;letter-spacing:.08em">
+          INTELLIGENCE
+        </span>
+      </div>
+      <!-- Alert level banner -->
+      <div style="background:{urgency_color};padding:12px 24px">
+        <span style="font-size:14px;font-weight:700;color:#fff;letter-spacing:.06em">{urgency_label}</span>
+      </div>
+      <!-- Body -->
+      <div style="padding:20px 24px">
+        <div style="font-size:15px;font-weight:700;color:#e2e8f0;line-height:1.5;margin-bottom:16px">
+          {headline}
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+          <div style="background:#060a0f;border:1px solid #1a2535;border-radius:6px;padding:10px 16px">
+            <div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Iran Boots Market</div>
+            <div style="font-size:20px;font-weight:700;color:#eab308">{price_str}</div>
+          </div>
+        </div>
+        <a href="https://USvsIran.Trade" style="display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:#3b82f6;padding:10px 20px;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:.04em">
+          → View Full Dashboard
+        </a>
+      </div>
+      <!-- Footer -->
+      <div style="padding:12px 24px;border-top:1px solid #1a2535;font-size:10px;color:#64748b">
+        EasyGoingA's First Strike Intelligence · <a href="https://USvsIran.Trade" style="color:#64748b">USvsIran.Trade</a>
+        · <a href="https://USvsIran.Trade/api/unsubscribe?email=__EMAIL__" style="color:#64748b">Unsubscribe</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+def send_alert_email(alert_level: str, headline: str, odds=None):
     """
-    Send an SMS alert to all active subscribers in EasyGoingA's News format.
+    Email all active subscribers when URGENT or IMPORTANT signal fires.
     Respects a 30-minute cooldown per subscriber to avoid spam.
     """
     from datetime import datetime as _dt2, timezone as _tz2, timedelta as _td2
-    subscribers = get_active_subscribers()
+    subscribers = get_active_email_subscribers()
     if not subscribers:
         return
 
     price_str = f"{odds:.1f}¢ YES" if odds else "—"
-    urgency   = "🚨 URGENT" if alert_level == "URGENT" else "⚠️ IMPORTANT"
-    body = (
-        f"EasyGoingA's News: {urgency}\n\n"
-        f"{headline[:140]}\n\n"
-        f"Iran Boots Market: {price_str}\n"
-        f"Reply STOP to unsubscribe"
-    )
+    if alert_level == "URGENT":
+        urgency_label = "🚨 URGENT ALERT"
+        urgency_color = "rgba(239,68,68,.85)"
+        subject = f"🚨 URGENT — {headline[:60]}"
+    else:
+        urgency_label = "⚠️ IMPORTANT ALERT"
+        urgency_color = "rgba(234,179,8,.75)"
+        subject = f"⚠️ IMPORTANT — {headline[:60]}"
 
     now      = _dt2.now(_tz2.utc)
     cooldown = _td2(minutes=30)
 
     for sub in subscribers:
-        last = sub.get("last_sms_at")
+        last = sub.get("last_email_at")
         if last:
             try:
                 last_dt = _dt2.fromisoformat(last.replace("Z", "+00:00"))
@@ -1067,82 +1131,105 @@ def send_alert_sms(alert_level: str, headline: str, odds=None):
                     continue
             except Exception:
                 pass
-        result = _send_sms(sub["phone"], body)
+        html = _email_html(urgency_label, urgency_color, headline[:200], price_str).replace(
+            "__EMAIL__", sub["email"]
+        )
+        result = _send_email(sub["email"], subject, html)
         if result.get("ok"):
-            update_last_sms(sub["phone"])
+            update_last_email(sub["email"])
+
+
+# keep old name as alias so video_monitor.py still works
+send_alert_sms = send_alert_email
 
 
 @app.post("/api/subscribe")
 def api_subscribe(req: SubscribeRequest):
-    """Subscribe a phone number to SMS alerts."""
-    phone = (req.phone or "").strip()
-    if not phone:
-        return {"subscribed": False, "error": "Phone number required"}
-    # Basic sanity: must start with + and be at least 8 chars
-    if len(phone) < 8:
-        return {"subscribed": False, "error": "Invalid phone number"}
-    result = add_subscriber(phone)
+    """Subscribe an email address to breaking-news alerts."""
+    email = (req.email or req.phone or "").strip().lower()
+    if not email or "@" not in email:
+        return {"subscribed": False, "error": "Valid email address required"}
+    result = add_email_subscriber(email)
     return result
+
+
+@app.get("/api/unsubscribe")
+def api_unsubscribe(email: str = ""):
+    """One-click unsubscribe link (used in email footer)."""
+    if email:
+        unsubscribe_email(email)
+        return HTMLResponse("<html><body style='font-family:sans-serif;text-align:center;padding:60px;background:#060a0f;color:#e2e8f0'>"
+                            "<h2>✓ Unsubscribed</h2><p>You've been removed from First Strike alerts.</p>"
+                            "<a href='/' style='color:#3b82f6'>← Back to Dashboard</a></body></html>")
+    return {"error": "No email provided"}
 
 
 @app.get("/api/subscribers")
 def api_subscribers():
-    """Admin: list all SMS subscribers."""
-    subs = get_active_subscribers()
-    # Mask phone numbers partially for display
+    """Admin: list all email subscribers."""
+    subs = get_active_email_subscribers()
     masked = [
-        {**s, "phone": s["phone"][:4] + "****" + s["phone"][-2:]}
+        {**s, "email": s["email"][:3] + "****" + s["email"][s["email"].find("@"):]}
         for s in subs
     ]
     return {"subscribers": masked, "count": len(subs)}
 
 
-@app.post("/api/sms/test")
-def api_sms_test():
-    """Admin: fire a test SMS to all subscribers (bypasses cooldown check via direct _send_sms)."""
-    subs = get_active_subscribers()
+@app.post("/api/email/test")
+def api_email_test():
+    """Admin: fire a test email to all subscribers."""
+    subs = get_active_email_subscribers()
     sent = 0
     errors = []
-    body = (
-        "EasyGoingA's News: 🔔 TEST\n\n"
-        "First Strike SMS alerts are now active. "
-        "You'll receive URGENT and IMPORTANT signals here.\n\n"
-        "Reply STOP to unsubscribe"
-    )
-    # Debug: include env var presence
-    twilio_debug = {
-        "sid_set": bool(os.environ.get("TWILIO_ACCOUNT_SID")),
-        "token_set": bool(os.environ.get("TWILIO_AUTH_TOKEN")),
-        "from_set": bool(os.environ.get("TWILIO_FROM_NUMBER")),
-        "from_number": os.environ.get("TWILIO_FROM_NUMBER", "NOT SET"),
+    email_debug = {
+        "from_set":     bool(os.environ.get("EMAIL_FROM")),
+        "password_set": bool(os.environ.get("EMAIL_PASSWORD")),
+        "smtp_host":    os.environ.get("SMTP_HOST", "smtp.gmail.com"),
+        "smtp_port":    os.environ.get("SMTP_PORT", "587"),
+        "from_addr":    os.environ.get("EMAIL_FROM", "NOT SET"),
     }
+    subject = "🔔 First Strike — Email alerts are active"
+    html = _email_html(
+        "🔔 TEST ALERT",
+        "rgba(59,130,246,.85)",
+        "First Strike email alerts are now active. You'll receive URGENT and IMPORTANT signals as they happen.",
+        "—"
+    )
     for sub in subs:
-        result = _send_sms(sub["phone"], body)
+        body = html.replace("__EMAIL__", sub["email"])
+        result = _send_email(sub["email"], subject, body)
         if result.get("ok"):
-            update_last_sms(sub["phone"])
+            update_last_email(sub["email"])
             sent += 1
         else:
-            errors.append({"phone": sub["phone"][:4] + "****", "error": result.get("error", "unknown")})
+            errors.append({"email": sub["email"][:3] + "***", "error": result.get("error", "unknown")})
     return {
         "triggered": True, "sent": sent, "recipient_count": len(subs),
-        "twilio": twilio_debug, "errors": errors
+        "email_config": email_debug, "errors": errors
     }
 
 
+# Legacy SMS endpoint aliases (keep URLs working)
+@app.post("/api/sms/test")
+def api_sms_test():
+    return api_email_test()
+
+
+@app.post("/api/email/send-news")
 @app.post("/api/sms/send-news")
-def api_sms_send_news():
-    """Admin: immediately send the latest top signal to all subscribers."""
+def api_email_send_news():
+    """Admin: immediately email the latest top signal to all subscribers."""
     state = get_command_state()
     top = state.get("top_signals", [])
     headline = top[0].get("headline", "No headline available") if top else state.get("reason_summary", "No signals")
     odds = state.get("market_odds")
     alert_level = state.get("alert_level", "IMPORTANT")
-    send_alert_sms(alert_level, headline, odds)
+    send_alert_email(alert_level, headline, odds)
     return {
         "triggered": True,
         "headline": headline,
         "alert_level": alert_level,
-        "recipients": len(get_active_subscribers()),
+        "recipients": len(get_active_email_subscribers()),
     }
 
 
@@ -1358,7 +1445,7 @@ def api_video_scan():
                 market_slug=MARKET_SLUG,
             )
             store_signal(sig)
-            send_alert_sms(alert["level"], sig.headline, None)
+            send_alert_email(alert["level"], sig.headline, None)
         except Exception:
             pass
     return {"scanned": len(vidmon.CHANNELS), "alerts": len(alerts),

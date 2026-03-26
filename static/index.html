@@ -593,26 +593,26 @@
 
   </div>
 
-  <!-- SMS Notification Signup -->
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin-top:16px;margin-bottom:16px">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+  <!-- Email Notification Signup -->
+  <div style="background:var(--surface);border:1px solid rgba(59,130,246,.25);border-radius:10px;padding:20px 24px;margin-top:16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
       <span style="font-size:22px">🔔</span>
       <div>
-        <div style="font-size:14px;font-weight:700;color:var(--text)">Notify Me When Big News Happens</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">Get a free SMS alert when an URGENT or IMPORTANT signal fires — breaking news, major price moves, or official source confirmations.</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text)">Get Breaking News Alerts</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Get an email when an URGENT or IMPORTANT signal fires — breaking news, major price moves, or official source confirmations.</div>
       </div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap" id="smsForm">
-      <input id="smsPhone" type="tel" placeholder="+1 555 000 0000"
-        style="background:#0d1117;border:1px solid var(--border);color:var(--text);padding:9px 14px;border-radius:6px;font-size:13px;font-family:inherit;width:200px;flex-shrink:0"
-        onkeydown="if(event.key==='Enter')subscribePhone()"/>
-      <button onclick="subscribePhone()"
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap" id="emailForm">
+      <input id="emailInput" type="email" placeholder="you@example.com"
+        style="background:#0d1117;border:1px solid var(--border);color:var(--text);padding:9px 14px;border-radius:6px;font-size:13px;font-family:inherit;width:220px;flex-shrink:0"
+        onkeydown="if(event.key==='Enter')subscribeEmail()"/>
+      <button onclick="subscribeEmail()"
         style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);padding:9px 20px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.04em">
         Subscribe
       </button>
-      <span id="smsMsg" style="font-size:12px;color:var(--muted)"></span>
+      <span id="emailMsg" style="font-size:12px;color:var(--muted)"></span>
     </div>
-    <div style="margin-top:8px;font-size:10px;color:rgba(139,148,158,.5)">Enter number with country code. Standard SMS rates apply. Reply STOP to unsubscribe.</div>
+    <div style="margin-top:8px;font-size:10px;color:rgba(139,148,158,.5)">Free. No spam. One email per alert, max 2/hour. Unsubscribe any time.</div>
   </div>
 
   <!-- Algorithm Explainer -->
@@ -1528,21 +1528,21 @@ async function refreshAll() {
 }
 
 // ── SMS subscribe ─────────────────────────────────────────────────────────────
-async function subscribePhone() {
-  const input = document.getElementById('smsPhone');
-  const msg   = document.getElementById('smsMsg');
-  const phone = (input.value || '').trim();
-  if (!phone) { msg.textContent = 'Please enter a phone number.'; msg.style.color='var(--red)'; return; }
+async function subscribeEmail() {
+  const input = document.getElementById('emailInput');
+  const msg   = document.getElementById('emailMsg');
+  const email = (input.value || '').trim();
+  if (!email || !email.includes('@')) { msg.textContent = 'Please enter a valid email.'; msg.style.color='var(--red)'; return; }
   msg.textContent = 'Subscribing...'; msg.style.color='var(--muted)';
   try {
     const r = await fetch('/api/subscribe', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({phone}),
+      body: JSON.stringify({email}),
     });
     const d = await r.json();
     if (d.subscribed) {
-      msg.textContent = '✓ Subscribed! You\'ll get SMS alerts for URGENT/IMPORTANT signals.';
+      msg.textContent = '✓ Subscribed! You\'ll get emails for URGENT/IMPORTANT signals.';
       msg.style.color = 'var(--green)';
       input.value = '';
     } else if (d.already_subscribed) {
