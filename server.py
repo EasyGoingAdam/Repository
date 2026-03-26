@@ -15,6 +15,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 # ── Live viewer tracking ───────────────────────────────────────────────────────
 _viewer_sessions: dict = {}   # session_id -> last_seen (epoch float)
 _VIEWER_TIMEOUT = 90          # seconds of silence before a session expires
+
+# ── Intel loop heartbeat ───────────────────────────────────────────────────────
+from datetime import datetime, timezone
+_intel_loop_last_cycle: datetime = None  # updated after each successful cycle
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -148,6 +152,10 @@ def _intel_loop():
 
         except Exception as e:
             print(f"[Intel] Loop error: {e}")
+
+        # Stamp heartbeat after every cycle (even partial)
+        global _intel_loop_last_cycle
+        _intel_loop_last_cycle = datetime.now(timezone.utc)
 
         cycle += 1
         time.sleep(120)  # 2 minute base interval
@@ -677,6 +685,105 @@ def get_system_status():
             "orderflow": "active" if counts["orderflow"] > 0 else "standby",
             "command": "online",
         }
+    }
+
+
+@app.get("/api/health")
+def api_health():
+    """
+    Comprehensive system health check polled by the frontend error banner.
+    Returns {status, checks, errors, timestamp}.
+    Critical failures (database, polymarket_api, intel_loop) set status=degraded.
+    Config issues (missing API keys) are surfaced as warnings but don't degrade status.
+    """
+    import sqlite3 as _sq
+    from datetime import timedelta as _td
+    from intelligence.signals import DB_PATH as _DB_PATH
+
+    now = datetime.now(timezone.utc)
+    checks: dict = {}
+
+    # 1. Database connectivity
+    try:
+        conn = _sq.connect(_DB_PATH, timeout=5)
+        row = conn.execute("SELECT COUNT(*) FROM signals").fetchone()
+        conn.close()
+        checks["database"] = {"ok": True, "signal_total": row[0] if row else 0}
+    except Exception as e:
+        checks["database"] = {"ok": False, "error": str(e)[:120]}
+
+    # 2. Signal freshness — should have at least one signal in the last 2 hours
+    try:
+        recent = get_recent_signals(hours=2, limit=1)
+        if recent:
+            checks["signals"] = {"ok": True, "last_signal": recent[0].get("timestamp")}
+        else:
+            checks["signals"] = {"ok": False, "error": "No signals in last 2 hours — intel loop may be stalled"}
+    except Exception as e:
+        checks["signals"] = {"ok": False, "error": str(e)[:120]}
+
+    # 3. Polymarket API — can we fetch the primary market?
+    try:
+        market = polyapi.find_iran_boots_market()
+        if market:
+            checks["polymarket_api"] = {"ok": True, "price": market.yes_price}
+        else:
+            checks["polymarket_api"] = {"ok": False, "error": "Primary market not found via Polymarket API"}
+    except Exception as e:
+        checks["polymarket_api"] = {"ok": False, "error": str(e)[:120]}
+
+    # 4. Intel loop heartbeat — should have run within the last 10 minutes
+    if _intel_loop_last_cycle:
+        age_min = (now - _intel_loop_last_cycle).total_seconds() / 60
+        if age_min < 10:
+            checks["intel_loop"] = {
+                "ok": True,
+                "last_cycle": _intel_loop_last_cycle.isoformat(),
+                "age_minutes": round(age_min, 1),
+            }
+        else:
+            checks["intel_loop"] = {
+                "ok": False,
+                "last_cycle": _intel_loop_last_cycle.isoformat(),
+                "age_minutes": round(age_min, 1),
+                "error": f"Intel loop stalled — last ran {age_min:.0f}m ago (expected <10m)",
+            }
+    else:
+        checks["intel_loop"] = {
+            "ok": False,
+            "error": "Intel loop has not completed its first cycle yet (starting up)",
+        }
+
+    # 5. API key configuration (warnings — non-critical)
+    checks["twitter_api"] = {
+        "ok": bool(os.environ.get("TWITTER_API_KEY")),
+        "error": None if os.environ.get("TWITTER_API_KEY") else "TWITTER_API_KEY not set — Pulse desk disabled",
+    }
+    checks["email_config"] = {
+        "ok": bool(os.environ.get("EMAIL_FROM")) and bool(os.environ.get("EMAIL_PASSWORD")),
+        "error": (None if (os.environ.get("EMAIL_FROM") and os.environ.get("EMAIL_PASSWORD"))
+                  else "EMAIL_FROM or EMAIL_PASSWORD not configured — alerts disabled"),
+    }
+    checks["youtube_api"] = {
+        "ok": bool(os.environ.get("YOUTUBE_API_KEY")),
+        "error": None if os.environ.get("YOUTUBE_API_KEY") else "YOUTUBE_API_KEY not set — video AI monitoring disabled",
+    }
+
+    # ── Overall status ─────────────────────────────────────────────────────────
+    critical = ["database", "polymarket_api", "intel_loop"]
+    critical_ok = all(checks.get(c, {}).get("ok", False) for c in critical)
+
+    errors = [
+        {"check": k, "error": v.get("error")}
+        for k, v in checks.items()
+        if not v.get("ok") and v.get("error")
+    ]
+
+    return {
+        "status": "healthy" if critical_ok else "degraded",
+        "checks": checks,
+        "errors": errors,
+        "timestamp": now.isoformat(),
     }
 
 
@@ -1452,10 +1559,11 @@ def api_video_scan():
             "youtube_key_set": bool(os.environ.get("YOUTUBE_API_KEY"))}
 
 
-@app.get("/markets", response_class=HTMLResponse)
+@app.get("/markets")
 def multi_market_dashboard():
-    with open(Path(__file__).parent / "static" / "multi-market.html") as f:
-        return f.read()
+    """Multi-market dashboard has been removed from the app — redirect to main dashboard."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.get("/tournament", response_class=HTMLResponse)

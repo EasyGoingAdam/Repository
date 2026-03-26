@@ -490,12 +490,29 @@ async function autoSelectChannel() {
       selectedId   = agendaId;
       selectedName = 'Agenda Free TV';
     } else if (liveChannels.length > 0) {
-      // Agenda Free TV is not confirmed live — use first confirmed live channel
-      const first = liveChannels[0];
-      const ch    = CHANNELS.find(c => c.name === first.name);
-      if (ch) { selectedId = ch.id; selectedName = ch.name; }
+      // Agenda Free TV is not live — prefer Al Jazeera, then any other live channel
+      const PRIORITY = ['Al Jazeera', 'BBC', 'CNN', 'Iran International', 'WION', 'DW', 'Bloomberg'];
+      let picked = null;
+      for (const pref of PRIORITY) {
+        const live = liveChannels.find(s => s.name && s.name.toLowerCase().includes(pref.toLowerCase()));
+        if (live) {
+          // Match by partial name since monitor names may differ slightly
+          const ch = CHANNELS.find(c => c.name.toLowerCase().includes(pref.toLowerCase()));
+          if (ch) { picked = ch; break; }
+        }
+      }
+      if (!picked) {
+        // Fallback: first live channel by any name match
+        const first = liveChannels[0];
+        const ch = CHANNELS.find(c =>
+          c.name === first.name ||
+          c.name.toLowerCase().includes((first.name || '').split(' ')[0].toLowerCase())
+        );
+        if (ch) picked = ch;
+      }
+      if (picked) { selectedId = picked.id; selectedName = picked.name; }
     }
-    // If no status data, default to Agenda Free TV anyway (no API key scenario)
+    // If no status data, default to Agenda Free TV (no API key scenario)
 
     loadChannel(selectedId, selectedName);
   } catch(e) {
@@ -531,5 +548,6 @@ setInterval(loadAlertFeed,    30000);
 setInterval(loadMonitorStatus,60000);
 setInterval(refreshKeywordHeat,90000);
 </script>
+<script src="/static/health.js"></script>
 </body>
 </html>
