@@ -180,15 +180,21 @@
       </div>
 
       <!-- Primary video -->
-      <div class="video-wrapper">
+      <div class="video-wrapper" id="videoWrapper">
         <iframe id="mainVideo"
-          src="https://www.youtube.com/embed/live_stream?channel=UCshCsg1YVKli8yBai-wa78w&autoplay=1&mute=1"
+          src=""
           allow="autoplay; encrypted-media" allowfullscreen
-          referrerpolicy="no-referrer-when-downgrade">
+          referrerpolicy="no-referrer-when-downgrade"
+          style="display:none">
         </iframe>
+        <div id="videoPlaceholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);gap:14px;padding:24px;text-align:center">
+          <div style="font-size:40px">📺</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text)">Checking live feeds...</div>
+          <div style="font-size:11px">Loading Agenda Free TV — if offline, selecting next available channel</div>
+        </div>
       </div>
       <div style="margin-top:7px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:10px">
-        <span id="nowWatching" style="color:var(--cyan);font-weight:700">▶ Agenda Free TV Live</span>
+        <span id="nowWatching" style="color:var(--cyan);font-weight:700">▶ Loading...</span>
         <span>Auto-muted on load · click to unmute</span>
         <span style="margin-left:auto" id="nowWatchingTime"></span>
       </div>
@@ -278,20 +284,11 @@ const ALL_KWS = [...TIER1, ...TIER2, 'iran','tehran','ceasefire','houthi','hezbo
 
 // ── Channel select ────────────────────────────────────────────────────────────
 function selectChannel(el) {
-  document.querySelectorAll('.ch-tab').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
-  const chId = el.dataset.ch, name = el.dataset.name;
-  document.getElementById('mainVideo').src =
-    `https://www.youtube.com/embed/live_stream?channel=${chId}&autoplay=1&mute=1`;
-  document.getElementById('nowWatching').textContent = '▶ ' + name + ' Live';
-  document.getElementById('nowWatchingTime').textContent = new Date().toLocaleTimeString();
+  loadChannel(el.dataset.ch, el.dataset.name);
 }
 
 function watchChannel(chId, name) {
-  document.getElementById('mainVideo').src =
-    `https://www.youtube.com/embed/live_stream?channel=${chId}&autoplay=1&mute=1`;
-  document.getElementById('nowWatching').textContent = '▶ ' + name + ' Live';
-  document.getElementById('nowWatchingTime').textContent = new Date().toLocaleTimeString();
+  loadChannel(chId, name);
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -461,9 +458,71 @@ function relTime(ts) {
   } catch{ return '—'; }
 }
 
+// ── Smart channel autoload ────────────────────────────────────────────────────
+// Try Agenda Free TV first. If YouTube returns an error/blank for that channel,
+// fall back through the roster in priority order.
+async function autoSelectChannel() {
+  // Always try Agenda Free TV first — they're a frequent 24/7 streamer
+  const agendaId = 'UCshCsg1YVKli8yBai-wa78w';
+
+  // We can't detect if a channel is live without the API, so we attempt to load
+  // Agenda Free TV and watch for the iframe's load event. If it loads successfully
+  // (YouTube shows the live stream), great. If YouTube shows an offline page,
+  // users can manually switch. This is the best we can do without an API key.
+  const iframe = document.getElementById('mainVideo');
+  const ph     = document.getElementById('videoPlaceholder');
+
+  // Check if API has status on channels
+  try {
+    const r = await fetch('/api/video/monitor');
+    const d = await r.json();
+    const statuses = d.channel_status || [];
+
+    // Find first channel that's live, preferring Agenda Free TV
+    const liveChannels = statuses.filter(s => s.live);
+    const agendaStatus = statuses.find(s => s.name === 'Agenda Free TV');
+
+    let selectedId   = agendaId;
+    let selectedName = 'Agenda Free TV';
+
+    if (agendaStatus && agendaStatus.live) {
+      // Agenda Free TV is confirmed live — use it
+      selectedId   = agendaId;
+      selectedName = 'Agenda Free TV';
+    } else if (liveChannels.length > 0) {
+      // Agenda Free TV is not confirmed live — use first confirmed live channel
+      const first = liveChannels[0];
+      const ch    = CHANNELS.find(c => c.name === first.name);
+      if (ch) { selectedId = ch.id; selectedName = ch.name; }
+    }
+    // If no status data, default to Agenda Free TV anyway (no API key scenario)
+
+    loadChannel(selectedId, selectedName);
+  } catch(e) {
+    // Fallback: just load Agenda Free TV
+    loadChannel(agendaId, 'Agenda Free TV');
+  }
+}
+
+function loadChannel(chId, name) {
+  const iframe = document.getElementById('mainVideo');
+  const ph     = document.getElementById('videoPlaceholder');
+  iframe.src   = `https://www.youtube.com/embed/live_stream?channel=${chId}&autoplay=1&mute=1`;
+  iframe.style.display = 'block';
+  ph.style.display     = 'none';
+  document.getElementById('nowWatching').textContent   = '▶ ' + name + ' Live';
+  document.getElementById('nowWatchingTime').textContent = new Date().toLocaleTimeString();
+
+  // Highlight the matching tab
+  document.querySelectorAll('.ch-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.ch === chId);
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 buildKeywords();
 buildRoster();
+autoSelectChannel();
 loadMonitorStatus();
 loadAlertFeed();
 refreshKeywordHeat();
