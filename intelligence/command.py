@@ -24,16 +24,21 @@ HIGH_IMPORTANCE_THRESHOLD = 75
 URGENT_IMPORTANCE_THRESHOLD = 85
 
 # ── Desk credibility weights ───────────────────────────────────────────────────
-# Pulse (X/Twitter) is the fastest and most direct — officials + analysts post
-# breaking developments in real time. Beacon (news) is second — credibility-
-# scored journalism from vetted sources. Market and OrderFlow reflect what
-# traders are doing, which lags real-world events.
+# Pulse (X/Twitter) is the fastest signal — officials + analysts break news in
+# real time. Beacon captures structured journalism. Historian context (encoded
+# as older signals still in the window) adds narrative weight. Volatility
+# trend provides a market-physics signal. Market and OrderFlow lag real events.
 DESK_WEIGHTS = {
-    "pulse":     0.40,   # X/Twitter: highest — real-time official + analyst signal
-    "beacon":    0.35,   # News/GDELT: second — structured, credibility-scored journalism
-    "market":    0.15,   # Polymarket price/momentum: crowd-sourced, lags events
-    "orderflow": 0.10,   # Order book depth: positioning intent, slowest to update
+    "pulse":     0.45,   # X/Twitter: highest — real-time official + analyst signal
+    "beacon":    0.38,   # News/GDELT: second — credibility-scored journalism
+    "market":    0.12,   # Polymarket price/momentum: crowd-sourced, lags events
+    "orderflow": 0.05,   # Order book depth: slowest to update, positional only
 }
+
+# How much volatility (price momentum) can shift the estimate.
+# Positive z-score (above mean) = market already pricing in escalation.
+# Negative z-score (below mean) = market underpricing risk → push estimate up.
+VOLATILITY_WEIGHT = 0.04   # max ±4pp adjustment from volatility z-score
 
 
 def run_command_cycle() -> dict:
@@ -51,8 +56,10 @@ def run_command_cycle() -> dict:
     market = polyapi.find_iran_boots_market()
     market_odds = market.yes_price if market else None
 
-    # 2. Get recent signals (24h) with decay
-    raw_signals = get_recent_signals(hours=24, limit=100)
+    # 2. Get signals — 48h window (historian depth) with 12h half-life decay
+    # Using 48h lets older high-importance signals (historian context) still
+    # influence the estimate, while recent signals dominate via decay.
+    raw_signals = get_recent_signals(hours=48, limit=200)
     signals = apply_confidence_decay(raw_signals, half_life_hours=12)
 
     # 3. Separate by source app
@@ -86,9 +93,35 @@ def run_command_cycle() -> dict:
     total_weight = bull_weight + bear_weight + 1
 
     # 6. Compute house odds (blend market price with signal direction)
+    # Max signal adjustment raised to 15pp so strong convergent signals
+    # can meaningfully diverge from the market price.
     if market_odds is not None and signals:
-        signal_adjustment = (bull_weight - bear_weight) / total_weight * 0.08
-        house_odds = max(0.02, min(0.97, market_odds + signal_adjustment))
+        signal_adjustment = (bull_weight - bear_weight) / total_weight * 0.15
+
+        # Volatility component: incorporate price momentum (z-score from
+        # stored volatility metrics or live computation).
+        vol_adjustment = 0.0
+        try:
+            from intelligence.signals import get_all_latest_volatility
+            all_vol = get_all_latest_volatility()
+            # Find the Iran boots market volatility record
+            iran_vol = next(
+                (v for v in all_vol
+                 if "iran" in str(v.get("market_id", "")).lower()
+                 or v.get("window_minutes") == 1440),   # 24h window
+                None
+            )
+            if iran_vol:
+                z = iran_vol.get("z_score", 0)
+                # Negative z = price below mean = market underpricing → push up
+                # Positive z = price above mean = market overpricing → push down
+                vol_adjustment = -z * VOLATILITY_WEIGHT / 3.0
+                vol_adjustment = max(-VOLATILITY_WEIGHT, min(VOLATILITY_WEIGHT, vol_adjustment))
+        except Exception:
+            pass
+
+        house_odds = max(0.02, min(0.97,
+            market_odds + signal_adjustment + vol_adjustment))
     else:
         house_odds = market_odds
 

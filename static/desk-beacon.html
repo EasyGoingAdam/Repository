@@ -112,7 +112,6 @@
     <div class="stat"><div class="lbl">De-Escalatory</div><div class="val" style="color:var(--red)" id="sBear">—</div><div class="sub">bearish YES</div></div>
     <div class="stat"><div class="lbl">Avg Importance</div><div class="val" style="color:var(--blue)" id="sImp">—</div><div class="sub">0–100</div></div>
     <div class="stat"><div class="lbl">GDELT Events</div><div class="val" style="color:var(--yellow)" id="sGdelt">—</div><div class="sub">structured data</div></div>
-    <div class="stat"><div class="lbl">Top Source</div><div class="val" style="font-size:13px;color:var(--blue);padding-top:4px" id="sTopSrc">—</div><div class="sub">most articles</div></div>
   </div>
 
   <div class="summary-card">
@@ -120,15 +119,9 @@
     <div class="summary-text" id="botSummary">Analyzing...</div>
   </div>
 
-  <div class="two-col">
-    <div class="card">
-      <h2>📊 Source Breakdown</h2>
-      <div id="sourceBreakdown"><div class="empty" style="padding:16px">No data</div></div>
-    </div>
-    <div class="card">
-      <h2>📈 Direction Breakdown</h2>
-      <div id="dirBreakdown"><div class="empty" style="padding:16px">No data</div></div>
-    </div>
+  <div class="card">
+    <h2>📈 Direction Breakdown</h2>
+    <div id="dirBreakdown"><div class="empty" style="padding:16px">No data</div></div>
   </div>
 
   <div class="controls">
@@ -190,22 +183,9 @@ function renderStats() {
   document.getElementById('sBear').textContent  = bear.length;
   document.getElementById('sImp').textContent   = avgImp || '—';
   document.getElementById('sGdelt').textContent = gdelt.length;
-  document.getElementById('sTopSrc').textContent = top ? top[0] : '—';
 }
 
 function renderBreakdowns() {
-  // Source breakdown
-  const srcCounts = {};
-  signals.forEach(s => { const src = extractSource(s.reasoning); srcCounts[src]=(srcCounts[src]||0)+1; });
-  const maxSrc = Math.max(...Object.values(srcCounts), 1);
-  const srcHtml = Object.entries(srcCounts).sort((a,b)=>b[1]-a[1]).map(([name,cnt]) => `
-    <div class="source-row">
-      <span class="source-name">${esc(name)}</span>
-      <div class="source-bar-wrap"><div class="source-bar" style="width:${cnt/maxSrc*100}%"></div></div>
-      <span class="source-count">${cnt}</span>
-    </div>`).join('') || '<div class="empty" style="padding:16px">No data</div>';
-  document.getElementById('sourceBreakdown').innerHTML = srcHtml;
-
   // Direction breakdown
   const dirs = {bullish:0, bearish:0, neutral:0};
   signals.forEach(s => { if(dirs[s.signal_direction]!==undefined) dirs[s.signal_direction]++; });

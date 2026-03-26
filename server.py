@@ -715,38 +715,48 @@ def api_all_latest_prices():
 @app.get("/api/volatility/iran/summary")
 def api_iran_volatility_summary():
     """
-    Comprehensive volatility summary for the Iran YES market.
+    Comprehensive volatility summary for the Iran YES (boots on ground) market.
     Returns high/low/range/change across 1h, 8h, 24h, 7d windows
     plus Bollinger bands, z-score, and a limit-price recommendation.
     """
     import statistics as _stats
-    from datetime import timedelta as _td
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
     market = polyapi.find_iran_boots_market()
     if not market:
         raise HTTPException(status_code=404, detail="Market not found")
 
-    # Resolve market_id in the watchlist DB
+    # Resolve market_id: look for the boots/forces-enter market in the watchlist.
+    # Try multiple keyword matches ranked by specificity.
     watchlist = get_managed_watchlist()
-    iran_entry = next(
-        (w for w in watchlist
-         if "iran" in (w.get("question","") + w.get("slug","")).lower()),
-        None
-    )
-    market_id = iran_entry["market_id"] if iran_entry else market.id
+    BOOTS_KEYWORDS = ["forces enter", "boots", "ground troops", "military enter"]
+    IRAN_KEYWORDS  = ["iran"]
+    iran_entry = None
+    for kw in BOOTS_KEYWORDS:
+        iran_entry = next((w for w in watchlist
+                           if kw in (w.get("question","") + w.get("slug","")).lower()), None)
+        if iran_entry:
+            break
+    if not iran_entry:
+        iran_entry = next((w for w in watchlist
+                           if any(k in (w.get("question","") + w.get("slug","")).lower()
+                                  for k in IRAN_KEYWORDS)), None)
+    market_id = iran_entry["market_id"] if iran_entry else str(market.id)
 
-    # Fetch 7 days of price snapshots
+    # Fetch 7 days of price snapshots; also try the API market.id as fallback
     all_snaps = get_price_snapshots(market_id, hours=168)
+    if not all_snaps and str(market.id) != market_id:
+        all_snaps = get_price_snapshots(str(market.id), hours=168)
 
-    now = datetime.now(timezone.utc)
+    now = _dt.now(_tz.utc)
 
     def _window(hours: int):
-        cutoff = now - timedelta(hours=hours)
+        cutoff = now - _td(hours=hours)
         pts = []
         for s in all_snaps:
             ts_raw = s.get("timestamp", "")
             try:
-                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                ts = _dt.fromisoformat(ts_raw.replace("Z", "+00:00"))
                 if ts >= cutoff and s.get("yes_price") is not None:
                     pts.append({"ts": ts, "p": float(s["yes_price"])})
             except Exception:
@@ -825,11 +835,11 @@ def api_iran_volatility_summary():
 
     # Recent price series for chart (last 24h, max 200 points)
     chart_snaps = []
-    cutoff_24h = now - timedelta(hours=24)
+    cutoff_24h = now - _td(hours=24)
     for s in all_snaps:
         ts_raw = s.get("timestamp", "")
         try:
-            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            ts = _dt.fromisoformat(ts_raw.replace("Z", "+00:00"))
             if ts >= cutoff_24h and s.get("yes_price") is not None:
                 chart_snaps.append({"t": ts_raw, "p": round(float(s["yes_price"]) * 100, 2)})
         except Exception:
@@ -1000,31 +1010,31 @@ def _send_sms(to: str, body: str) -> bool:
 
 def send_alert_sms(alert_level: str, headline: str, odds=None):
     """
-    Send an SMS alert to all active subscribers.
+    Send an SMS alert to all active subscribers in EasyGoingA's News format.
     Respects a 30-minute cooldown per subscriber to avoid spam.
     """
-    from datetime import timedelta as _td
+    from datetime import datetime as _dt2, timezone as _tz2, timedelta as _td2
     subscribers = get_active_subscribers()
     if not subscribers:
         return
 
     price_str = f"{odds:.1f}¢ YES" if odds else "—"
-    emoji = "🚨" if alert_level == "URGENT" else "⚠️"
+    urgency   = "🚨 URGENT" if alert_level == "URGENT" else "⚠️ IMPORTANT"
     body = (
-        f"{emoji} FIRST STRIKE {alert_level}\n"
-        f"{headline[:120]}\n"
-        f"Market: {price_str}\n"
-        f"firststrikeapp.com | Reply STOP to unsubscribe"
+        f"EasyGoingA's News: {urgency}\n\n"
+        f"{headline[:140]}\n\n"
+        f"Iran Boots Market: {price_str}\n"
+        f"Reply STOP to unsubscribe"
     )
 
-    now = datetime.now(timezone.utc)
-    cooldown = _td(minutes=30)
+    now      = _dt2.now(_tz2.utc)
+    cooldown = _td2(minutes=30)
 
     for sub in subscribers:
         last = sub.get("last_sms_at")
         if last:
             try:
-                last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                last_dt = _dt2.fromisoformat(last.replace("Z", "+00:00"))
                 if now - last_dt < cooldown:
                     continue
             except Exception:
@@ -1061,9 +1071,38 @@ def api_subscribers():
 
 @app.post("/api/sms/test")
 def api_sms_test():
-    """Admin: fire a test SMS to all subscribers."""
-    send_alert_sms("URGENT", "Test alert — First Strike SMS system is operational.", 70.5)
-    return {"triggered": True, "recipient_count": len(get_active_subscribers())}
+    """Admin: fire a test SMS to all subscribers (bypasses cooldown check via direct _send_sms)."""
+    from datetime import datetime as _dt3, timezone as _tz3
+    subs = get_active_subscribers()
+    sent = 0
+    body = (
+        "EasyGoingA's News: 🔔 TEST\n\n"
+        "First Strike SMS alerts are now active. "
+        "You'll receive URGENT and IMPORTANT signals here.\n\n"
+        "Reply STOP to unsubscribe"
+    )
+    for sub in subs:
+        if _send_sms(sub["phone"], body):
+            update_last_sms(sub["phone"])
+            sent += 1
+    return {"triggered": True, "sent": sent, "recipient_count": len(subs)}
+
+
+@app.post("/api/sms/send-news")
+def api_sms_send_news():
+    """Admin: immediately send the latest top signal to all subscribers."""
+    state = get_command_state()
+    top = state.get("top_signals", [])
+    headline = top[0].get("headline", "No headline available") if top else state.get("reason_summary", "No signals")
+    odds = state.get("market_odds")
+    alert_level = state.get("alert_level", "IMPORTANT")
+    send_alert_sms(alert_level, headline, odds)
+    return {
+        "triggered": True,
+        "headline": headline,
+        "alert_level": alert_level,
+        "recipients": len(get_active_subscribers()),
+    }
 
 
 # ── Live Viewer Counter ───────────────────────────────────────────────────────
