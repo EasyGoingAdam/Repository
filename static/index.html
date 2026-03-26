@@ -1585,55 +1585,56 @@ async function loadVol() {
       changeEl.className = 'chip-value ' + (changePct >= 0 ? 'c-green' : 'c-red');
     }
 
-    // Chart Bollinger bands
-    _bollingerUpper = rec.bollinger_upper;
-    _bollingerLower = rec.bollinger_lower;
+    // NOTE: The volatility API now returns all price values already in cents (×100).
+    // w24.high=70.5 means 70.5¢ — do NOT multiply by 100 again.
 
-    // Chart vol stats
-    document.getElementById('cvs24hHigh').textContent  = w24.high  != null ? (w24.high  * 100).toFixed(1) + '¢' : '—';
-    document.getElementById('cvs24hLow').textContent   = w24.low   != null ? (w24.low   * 100).toFixed(1) + '¢' : '—';
-    document.getElementById('cvs24hMean').textContent  = w24.mean  != null ? (w24.mean  * 100).toFixed(1) + '¢' : '—';
+    // Chart Bollinger bands — use w24 since rec no longer carries bollinger fields
+    _bollingerUpper = w24.bollinger_upper != null ? w24.bollinger_upper / 100 : null;
+    _bollingerLower = w24.bollinger_lower != null ? w24.bollinger_lower / 100 : null;
 
-    const bollStr = (rec.bollinger_lower != null && rec.bollinger_upper != null)
-      ? (rec.bollinger_lower * 100).toFixed(1) + '¢ / ' + (rec.bollinger_upper * 100).toFixed(1) + '¢'
+    // Chart vol stats — values already in cents
+    document.getElementById('cvs24hHigh').textContent  = w24.high  != null ? w24.high.toFixed(1)  + '¢' : '—';
+    document.getElementById('cvs24hLow').textContent   = w24.low   != null ? w24.low.toFixed(1)   + '¢' : '—';
+    document.getElementById('cvs24hMean').textContent  = w24.mean  != null ? w24.mean.toFixed(1)  + '¢' : '—';
+
+    const bollStr = (w24.bollinger_lower != null && w24.bollinger_upper != null)
+      ? w24.bollinger_lower.toFixed(1) + '¢ / ' + w24.bollinger_upper.toFixed(1) + '¢'
       : '— / —';
     document.getElementById('cvsBoll').textContent = bollStr;
 
-    // Field Orders
-    const timing = rec.timing ?? 'neutral_wait';
-    const sugLimitRaw = rec.suggested_limit;
-    const sugLimit = sugLimitRaw != null ? (sugLimitRaw * 100).toFixed(1) + '¢' : '—¢';
-    const bollLower = rec.bollinger_lower != null ? (rec.bollinger_lower * 100).toFixed(1) + '¢' : '—¢';
-    const bollUpper = rec.bollinger_upper != null ? (rec.bollinger_upper * 100).toFixed(1) + '¢' : '—¢';
-    const mean24h   = rec.mean_24h != null ? (rec.mean_24h * 100).toFixed(1) + '¢' : '—¢';
-    const zScore24h = rec.z_score_24h;
+    // Field Orders — rec.recommended_bid and rec.*_price are already in cents
+    const sugLimitRaw = rec.recommended_bid;
+    const sugLimit    = sugLimitRaw != null ? sugLimitRaw.toFixed(1) + '¢' : '—¢';
+    const bollLower   = w24.bollinger_lower != null ? w24.bollinger_lower.toFixed(1) + '¢' : '—¢';
+    const bollUpper   = w24.bollinger_upper != null ? w24.bollinger_upper.toFixed(1) + '¢' : '—¢';
+    const mean24h     = w24.mean != null ? w24.mean.toFixed(1) + '¢' : '—¢';
+    const zScore24h   = w24.z_score;
 
-    // Timing → field orders primary text suffix
-    const timingLabels = {
-      'strong_buy':      'EXECUTE BUY AT MARKET',
-      'buy':             'BUY ON DIP \u2014 SET LIMIT',
-      'mild_buy':        'ACCUMULATE \u2014 SCALE IN',
-      'neutral_wait':    'HOLD POSITION \u2014 WAIT',
-      'overpriced_wait': 'DO NOT ENTER \u2014 OVERPRICED',
+    // Map new action → field order label
+    const actionLabels = {
+      'STRONG_BUY': 'BUY AT MARKET \u2014 FLOOR PRICE',
+      'BUY_NOW':    'BUY NOW \u2014 VALUE ZONE',
+      'BUY_DIP':    'SET LIMIT \u2014 WAIT FOR DIP',
+      'WAIT':       'HOLD \u2014 OVERPRICED',
+      'STABLE':     'ACCUMULATE \u2014 STABLE PRICE',
     };
     const foTs = document.getElementById('foTs');
     foTs.textContent = 'Volatility updated: ' + new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
 
-    // Append timing to primary order text if not hold
+    // Append recommended bid to primary order text
     const poTextEl = document.getElementById('foPrimaryText');
     const curTxt   = poTextEl.textContent || '';
     if (curTxt && !curTxt.includes('STAND DOWN')) {
-      // Append the suggested limit
       poTextEl.textContent = curTxt.replace(/\s*@.*$/, '') + ' @ ' + sugLimit;
     }
 
-    // Entry zone
+    // Entry zone (Bollinger lower–upper)
     document.getElementById('foEntryZone').textContent = bollLower + ' — ' + bollUpper;
 
     // Tactical brief
     document.getElementById('foTactical').textContent = rec.reasoning || 'No tactical brief available.';
 
-    // Market conditions
+    // Market conditions — z_score is unitless, already correct
     const zEl = document.getElementById('foZScore');
     const zLabelEl = document.getElementById('foZScoreLabel');
     if (zScore24h != null) {
@@ -1642,8 +1643,9 @@ async function loadVol() {
       zLabelEl.textContent = zScore24h > 1.5 ? 'overbought' : zScore24h < -1.5 ? 'oversold' : 'fair value';
     }
 
-    const lowCents  = w24.low  != null ? (w24.low  * 100).toFixed(1) + '¢' : '—¢';
-    const highCents = w24.high != null ? (w24.high * 100).toFixed(1) + '¢' : '—¢';
+    // 24h range — values already in cents
+    const lowCents  = w24.low  != null ? w24.low.toFixed(1)  + '¢' : '—¢';
+    const highCents = w24.high != null ? w24.high.toFixed(1) + '¢' : '—¢';
     document.getElementById('fo24hRange').textContent   = lowCents + ' — ' + highCents;
     document.getElementById('fo24hMean').textContent    = mean24h;
     const stdDev = w24.std_dev_pct;
