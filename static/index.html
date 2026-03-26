@@ -587,11 +587,31 @@
     <div class="card">
       <h2>Prediction Performance</h2>
       <div class="perf-grid" id="perfGrid">
-        <div class="perf-metric"><div class="label">Predictions</div><div class="big blue" id="perfTotal">—</div></div>
+        <div class="perf-metric"><div class="label">Total Stored</div><div class="big blue" id="perfTotal">—</div></div>
+        <div class="perf-metric"><div class="label">Pending</div><div class="big yellow" id="perfPending">—</div></div>
         <div class="perf-metric"><div class="label">Accuracy</div><div class="big green" id="perfAcc">—</div></div>
-        <div class="perf-metric"><div class="label">Brier Score</div><div class="big yellow" id="perfBrier">—</div></div>
-        <div class="perf-metric"><div class="label">P&L (units)</div><div class="big" id="perfPL">—</div></div>
+        <div class="perf-metric"><div class="label">Brier Score</div><div class="big" id="perfBrier">—</div></div>
       </div>
+      <!-- Live prediction snapshot — shown even before resolutions -->
+      <div id="perfLiveBox" style="margin-top:14px;display:none">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Latest Prediction Snapshot</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Model Says</div>
+            <div style="font-size:22px;font-weight:700;color:var(--purple)" id="perfModelSays">—</div>
+          </div>
+          <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Market Price</div>
+            <div style="font-size:22px;font-weight:700;color:var(--blue)" id="perfMktPrice">—</div>
+          </div>
+          <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Model Edge</div>
+            <div style="font-size:22px;font-weight:700" id="perfEdge">—</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5" id="perfReasoning"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px" id="perfNote"></div>
     </div>
 
     <!-- Predictions History (full width) -->
@@ -870,13 +890,13 @@ function renderRangeComparison(depth, range) {
 
   const imbalEl = document.getElementById('rangeImbalLabel');
   if (imbal > 0.1) {
-    imbalEl.textContent = '▲ Buyers winning';
+    imbalEl.textContent = '▲ More Buyer $';
     imbalEl.style.color = 'var(--green)';
   } else if (imbal < -0.1) {
-    imbalEl.textContent = '▼ Sellers winning';
+    imbalEl.textContent = '▼ More Seller $';
     imbalEl.style.color = 'var(--red)';
   } else {
-    imbalEl.textContent = '↔ Balanced';
+    imbalEl.textContent = '↔ Even';
     imbalEl.style.color = 'var(--muted)';
   }
 }
@@ -898,6 +918,14 @@ async function loadOBHistory() {
       document.getElementById('histAvgBid').textContent = '—';
       document.getElementById('histAvgAsk').textContent = '—';
       document.getElementById('histMaxImbal').textContent = '—';
+      // Show empty chart with message
+      const ctx0 = document.getElementById('obHistoryChart').getContext('2d');
+      if (obHistoryChartInstance) { obHistoryChartInstance.destroy(); obHistoryChartInstance = null; }
+      ctx0.clearRect(0, 0, ctx0.canvas.width, ctx0.canvas.height);
+      ctx0.fillStyle = '#8b949e';
+      ctx0.font = '13px sans-serif';
+      ctx0.textAlign = 'center';
+      ctx0.fillText('Collecting data — snapshots taken every 2 min', ctx0.canvas.width/2, ctx0.canvas.height/2);
       return;
     }
 
@@ -912,13 +940,18 @@ async function loadOBHistory() {
     imbalEl.textContent = (maxImbal > 0 ? '+' : '') + (maxImbal * 100).toFixed(1) + '%';
     imbalEl.style.color = maxImbal > 0.05 ? 'var(--green)' : maxImbal < -0.05 ? 'var(--red)' : 'var(--muted)';
 
+    // Show points when data is sparse so individual readings are visible
+    const sparse = snaps.length < 15;
+    const ptRadius = sparse ? 4 : 0;
+    const ptHover  = sparse ? 5 : 3;
+
     // Chart
     const labels = snaps.map(s => {
       const t = new Date(s.timestamp);
       return t.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
     });
-    const bidData  = snaps.map(s => s.bid_depth);
-    const askData  = snaps.map(s => s.ask_depth);
+    const bidData   = snaps.map(s => s.bid_depth);
+    const askData   = snaps.map(s => s.ask_depth);
     const priceData = snaps.map(s => (s.yes_price || 0) * 100);
 
     const ctx = document.getElementById('obHistoryChart').getContext('2d');
@@ -935,9 +968,11 @@ async function loadOBHistory() {
             borderColor: '#22c55e',
             backgroundColor: 'rgba(34,197,94,0.08)',
             borderWidth: 2,
-            pointRadius: 0,
+            pointRadius: ptRadius,
+            pointHoverRadius: ptHover,
+            pointBackgroundColor: '#22c55e',
             fill: true,
-            tension: 0.3,
+            tension: sparse ? 0 : 0.3,
             yAxisID: 'yDepth',
           },
           {
@@ -947,9 +982,11 @@ async function loadOBHistory() {
             borderColor: '#ef4444',
             backgroundColor: 'rgba(239,68,68,0.08)',
             borderWidth: 2,
-            pointRadius: 0,
+            pointRadius: ptRadius,
+            pointHoverRadius: ptHover,
+            pointBackgroundColor: '#ef4444',
             fill: true,
-            tension: 0.3,
+            tension: sparse ? 0 : 0.3,
             yAxisID: 'yDepth',
           },
           {
@@ -960,8 +997,10 @@ async function loadOBHistory() {
             backgroundColor: 'transparent',
             borderWidth: 1.5,
             borderDash: [4, 3],
-            pointRadius: 0,
-            tension: 0.3,
+            pointRadius: ptRadius,
+            pointHoverRadius: ptHover,
+            pointBackgroundColor: '#3b82f6',
+            tension: sparse ? 0 : 0.3,
             yAxisID: 'yPrice',
           },
         ]
@@ -1177,14 +1216,62 @@ async function loadPredictions() {
 
 async function loadPerformance() {
   try {
-    const d = await api('/api/performance');
-    document.getElementById('perfTotal').textContent = d.total_predictions;
-    document.getElementById('perfAcc').textContent = d.resolved ? fmtPct(d.accuracy) : '—';
-    document.getElementById('perfBrier').textContent = d.resolved ? d.avg_brier_score.toFixed(4) : '—';
-    const pl = d.profit_loss_units;
-    const plEl = document.getElementById('perfPL');
-    plEl.textContent = d.resolved ? (pl >= 0 ? '+' : '') + pl.toFixed(2) : '—';
-    plEl.className = 'big ' + (pl > 0 ? 'green' : pl < 0 ? 'red' : '');
+    const [perf, preds] = await Promise.all([
+      api('/api/performance'),
+      api('/api/predictions'),
+    ]);
+
+    // Top-level counts
+    document.getElementById('perfTotal').textContent   = perf.total_predictions || 0;
+    document.getElementById('perfPending').textContent = perf.pending || 0;
+
+    // Accuracy / Brier — only meaningful once resolved
+    const accEl = document.getElementById('perfAcc');
+    const brierEl = document.getElementById('perfBrier');
+    if (perf.resolved > 0) {
+      accEl.textContent   = fmtPct(perf.accuracy);
+      accEl.style.color   = perf.accuracy >= 0.6 ? 'var(--green)' : perf.accuracy >= 0.4 ? 'var(--yellow)' : 'var(--red)';
+      brierEl.textContent = perf.avg_brier_score.toFixed(4);
+      brierEl.style.color = perf.avg_brier_score < 0.15 ? 'var(--green)' : perf.avg_brier_score < 0.25 ? 'var(--yellow)' : 'var(--red)';
+    } else {
+      accEl.textContent   = 'Pending';
+      accEl.style.color   = 'var(--muted)';
+      brierEl.textContent = 'Pending';
+      brierEl.style.color = 'var(--muted)';
+    }
+
+    // Live snapshot from most recent prediction
+    const allPreds = (preds.predictions || []).slice().reverse(); // newest first
+    const latest = allPreds[0];
+    const noteEl = document.getElementById('perfNote');
+    const liveBox = document.getElementById('perfLiveBox');
+
+    if (latest) {
+      liveBox.style.display = 'block';
+      const modelPct = (latest.predicted_yes_prob * 100).toFixed(1) + '%';
+      const mktPct   = (latest.yes_price_at_prediction * 100).toFixed(1) + '%';
+      const edge     = ((latest.predicted_yes_prob - latest.yes_price_at_prediction) * 100);
+      const edgeStr  = (edge >= 0 ? '+' : '') + edge.toFixed(1) + 'pp';
+
+      document.getElementById('perfModelSays').textContent = modelPct;
+      document.getElementById('perfMktPrice').textContent  = mktPct;
+
+      const edgeEl = document.getElementById('perfEdge');
+      edgeEl.textContent   = edgeStr;
+      edgeEl.style.color   = edge > 2 ? 'var(--green)' : edge < -2 ? 'var(--red)' : 'var(--muted)';
+
+      // Truncate reasoning
+      const reason = latest.reasoning || '';
+      const shortReason = reason.split('\n').filter(l => l.trim()).slice(0,3).join(' · ');
+      document.getElementById('perfReasoning').textContent = shortReason.slice(0, 200);
+
+      noteEl.textContent = perf.resolved === 0
+        ? `${perf.pending} prediction${perf.pending !== 1 ? 's' : ''} pending resolution. Accuracy and Brier score will populate once market resolves.`
+        : `${perf.resolved} resolved · ${perf.pending} pending`;
+    } else {
+      liveBox.style.display = 'none';
+      noteEl.textContent = 'No predictions stored yet. Click "Store Prediction" to begin tracking.';
+    }
   } catch(e) { console.error('performance', e); }
 }
 
