@@ -79,6 +79,7 @@
     <span class="desk-badge">📡 Beacon — News Intel</span>
     <span id="lastScan" style="font-size:10px;color:var(--muted)">Loading...</span>
   </div>
+<span id="viewerBadge" style="font-size:11px;color:var(--muted);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:2px 9px;border-radius:10px">👁 —</span>
 </header>
 <nav class="desk-nav">
   <a href="/command"    class="desk-nav-item">🎖️ Command</a>
@@ -341,6 +342,22 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
 load();
 setInterval(load, 60000);
+
+// ── Live viewer heartbeat ──────────────────────────────────────────────────
+(function() {
+  let _sid = localStorage.getItem("fs_sid") || "";
+  async function beat() {
+    try {
+      const r = await fetch("/api/heartbeat", {method:"POST", headers: _sid ? {"X-Session-Id": _sid} : {}});
+      const d = await r.json();
+      if (d.session_id) { _sid = d.session_id; localStorage.setItem("fs_sid", _sid); }
+      const el = document.getElementById("viewerBadge");
+      if (el) el.textContent = "👁 " + d.viewers + (d.viewers === 1 ? " live" : " live");
+    } catch(e) {}
+  }
+  beat();
+  setInterval(beat, 30000);
+})();
 </script>
 </body>
 </html>

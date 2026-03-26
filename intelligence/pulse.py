@@ -21,36 +21,92 @@ TWITTERAPI_BASE = "https://api.twitterapi.io"   # NOTE: no /twitter suffix on ba
 
 # ── Monitored accounts ────────────────────────────────────────────────────────
 PRIORITY_ACCOUNTS = [
-    "DeptofDefense", "CENTCOM", "StateDept", "POTUS",
-    "iranintl", "VOAIran", "RadioFarda_",
-    "Reuters", "AP", "BBCWorld",
+    # US Government / Military
+    "DeptofDefense", "CENTCOM", "StateDept", "POTUS", "SecDef",
+    "USNavy", "USMC", "ArmyChiefStaff",
+    # Iran / Middle East news
+    "iranintl", "VOAIran", "RadioFarda_", "IranWire", "IrnaEnglish",
+    "AJEnglish", "AJArabic",
+    # Wire services
+    "Reuters", "AP", "BBCWorld", "AFP",
+    # Defense / OSINT analysts
+    "OSINTdefender", "IntelCrab", "WarMonitor_", "Natsecjeff", "RALee85",
+    # Think tanks / policy
+    "AmbJohnBolton", "CSIS", "BrookingsInst",
 ]
 
 # ── Search queries (rotated each cycle) ──────────────────────────────────────
 SEARCH_QUERIES = [
-    "iran troops military",
-    "US iran invasion",
+    # Boots on the ground
+    "boots on the ground iran",
+    "US troops iran ground forces",
+    "american soldiers iran",
+    "special forces iran deployment",
+    "marines iran",
+    "infantry iran military",
+    "US ground invasion iran",
+    "troops enter iran",
+    "military incursion iran",
+    "ground operation iran 2025",
+    # Ceasefire / diplomacy
+    "iran ceasefire",
+    "iran peace deal 2025",
+    "iran nuclear agreement",
+    "iran diplomacy negotiations",
+    "iran sanctions deal",
+    "iran JCPOA 2025",
+    "iran US diplomacy Oman",
+    "iran de-escalation",
+    "iran talks Trump",
+    # Escalation / strikes
+    "US iran invasion 2025",
     "CENTCOM iran",
-    "pentagon iran",
+    "pentagon iran military",
     "iran war 2025",
-    "iran ground forces",
-    "boots iran ground",
     "iran nuclear strike",
     "IRGC deployment",
     "iran military operation",
     "iran escalation",
-    "iran attack US forces",
+    "US attack iran",
+    "airstrikes iran",
+    "iran missile attack",
+    # Nuclear
+    "iran nuclear bomb",
+    "iran enrichment weapons",
+    "fordow iran",
+    "iran nuclear breakout",
+    "IAEA iran",
+    "iran uranium enrichment",
+    # Proxy / regional
+    "hezbollah iran attack",
+    "houthi iran 2025",
+    "iran proxy war",
+    "IRGC operation",
+    "iran strait of hormuz",
+    "hormuz blockade",
+    # Key figures
+    "khamenei military",
+    "trump iran ultimatum",
+    "hegseth iran",
+    "netanyahu iran attack",
 ]
 
 # ── Pre-known credibility scores ──────────────────────────────────────────────
 CREDIBILITY_MAP = {
+    # US official
     "DeptofDefense": 95, "CENTCOM": 95, "SecDef": 95, "StateDept": 90,
-    "POTUS": 95, "Reuters": 88, "AP": 88, "BBCWorld": 85,
-    "AlMonitor": 78, "RALee85": 74, "Natsecjeff": 72,
-    "iranintl": 75, "IrnaEnglish": 60, "PressTV": 38,
+    "POTUS": 95, "USNavy": 88, "USMC": 88, "ArmyChiefStaff": 88,
+    # Wire services
+    "Reuters": 88, "AP": 88, "AFP": 86, "BBCWorld": 85,
+    # Iran / regional news
+    "iranintl": 76, "VOAIran": 75, "RadioFarda_": 72, "IranWire": 72,
+    "IrnaEnglish": 58, "PressTV": 35, "AJEnglish": 74, "AJArabic": 70,
+    # OSINT / analysts
     "OSINTdefender": 68, "IntelCrab": 66, "WarMonitor_": 63,
-    "IranWire": 72, "RadioFarda_": 72, "VOAIran": 75,
-    "borzou": 70, "AmbJohnBolton": 72, "KenRoth": 68,
+    "RALee85": 74, "Natsecjeff": 72, "AlMonitor": 78,
+    # Policy / think tanks
+    "AmbJohnBolton": 72, "KenRoth": 68, "CSIS": 76, "BrookingsInst": 76,
+    "borzou": 70,
 }
 
 ESCALATION_TERMS = [

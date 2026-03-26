@@ -103,7 +103,8 @@
       <span class="last-updated" id="lastUpdated">Loading...</span>
       <button class="btn btn-sm" onclick="refreshData()">Refresh</button>
     </div>
-  </header>
+  <span id="viewerBadge" style="font-size:11px;color:var(--muted);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:2px 9px;border-radius:10px">👁 —</span>
+</header>
 
   <div class="container">
     <!-- Stats bar -->
@@ -176,6 +177,17 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- EasyGoingA Positions -->
+  <div class="section" style="margin-top:20px">
+    <div class="section-header">
+      <h2>📊 @easygoinga — Iran Portfolio</h2>
+      <button class="btn btn-sm" onclick="loadPositions()">↻ Refresh</button>
+    </div>
+    <div id="positionsPanel" style="padding:16px 20px">
+      <div class="loading">Loading positions...</div>
     </div>
   </div>
 
@@ -319,9 +331,86 @@ function refreshData() {
   fetchDashboard();
 }
 
+async function loadPositions() {
+  const el = document.getElementById('positionsPanel');
+  el.innerHTML = '<div class="loading">Loading positions...</div>';
+  try {
+    const d = await (await fetch('/api/user/position')).json();
+    if (!d.found) {
+      el.innerHTML = `<div style="color:var(--muted);padding:8px">Position data unavailable: ${d.error || 'unknown'}</div>`;
+      return;
+    }
+    const s = d.summary;
+    const pnlColor = s.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    const pnlStr   = (s.total_pnl >= 0 ? '+$' : '-$') + Math.abs(s.total_pnl).toFixed(0);
+    let html = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px">
+        <div style="background:rgba(88,166,255,.06);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">POSITIONS</div>
+          <div style="font-size:22px;font-weight:700;color:var(--blue)">${s.total_positions}</div>
+        </div>
+        <div style="background:rgba(63,185,80,.06);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">CURRENT VALUE</div>
+          <div style="font-size:22px;font-weight:700;color:var(--green)">$${s.current_value.toFixed(0)}</div>
+        </div>
+        <div style="background:rgba(${s.total_pnl>=0?'63,185,80':'248,81,73'},.06);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">TOTAL P&L</div>
+          <div style="font-size:22px;font-weight:700;color:${pnlColor}">${pnlStr}</div>
+        </div>
+        <div style="background:rgba(188,140,255,.06);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">WIN / LOSS</div>
+          <div style="font-size:22px;font-weight:700"><span style="color:var(--green)">${s.winning}</span><span style="color:var(--muted)"> / </span><span style="color:var(--red)">${s.losing}</span></div>
+        </div>
+      </div>`;
+
+    const tops = d.top_positions || [];
+    if (tops.length) {
+      html += `<div style="overflow-x:auto"><table>
+        <thead><tr>
+          <th>Market</th><th>Side</th><th>Shares</th><th>Avg</th><th>Now</th><th>P&L</th>
+        </tr></thead><tbody>`;
+      html += tops.map(p => {
+        const pnlC  = p.cash_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const pnlS  = (p.cash_pnl >= 0 ? '+$' : '-$') + Math.abs(p.cash_pnl).toFixed(0);
+        const title = p.title.length > 42 ? p.title.slice(0,40) + '…' : p.title;
+        const sideC = p.outcome === 'YES' ? 'var(--green)' : 'var(--red)';
+        return `<tr>
+          <td>${title}</td>
+          <td style="color:${sideC};font-weight:600">${p.outcome}</td>
+          <td style="font-family:monospace">${p.shares.toLocaleString('en',{maximumFractionDigits:0})}</td>
+          <td style="font-family:monospace;color:var(--muted)">${(p.avg_price*100).toFixed(1)}¢</td>
+          <td style="font-family:monospace">${p.cur_price > 0 ? (p.cur_price*100).toFixed(1)+'¢' : (p.redeemable?'✓':'✗')}</td>
+          <td style="font-family:monospace;color:${pnlC};font-weight:700">${pnlS}</td>
+        </tr>`;
+      }).join('');
+      html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--muted)">Error loading positions: ${e.message}</div>`;
+  }
+}
+
 // Initial load + auto-refresh every 30s
 fetchDashboard();
+loadPositions();
 setInterval(fetchDashboard, 30000);
+
+// ── Live viewer heartbeat ──────────────────────────────────────────────────
+(function() {
+  let _sid = localStorage.getItem("fs_sid") || "";
+  async function beat() {
+    try {
+      const r = await fetch("/api/heartbeat", {method:"POST", headers: _sid ? {"X-Session-Id": _sid} : {}});
+      const d = await r.json();
+      if (d.session_id) { _sid = d.session_id; localStorage.setItem("fs_sid", _sid); }
+      const el = document.getElementById("viewerBadge");
+      if (el) el.textContent = "👁 " + d.viewers + (d.viewers === 1 ? " live" : " live");
+    } catch(e) {}
+  }
+  beat();
+  setInterval(beat, 30000);
+})();
 </script>
 </body>
 </html>

@@ -321,6 +321,7 @@
   <h1><span>Poly</span>market Analyzer</h1>
   <div style="display:flex;align-items:center;gap:16px">
     <span><span class="live-dot"></span><span class="last-updated" id="lastUpdated">Loading...</span></span>
+    <span id="viewerBadge" style="font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--border);padding:3px 10px;border-radius:12px">👁 —</span>
     <button class="btn btn-sm" onclick="refreshAll()">↻ Refresh</button>
   </div>
 </header>
@@ -1555,6 +1556,22 @@ async function subscribePhone() {
     msg.style.color = 'var(--red)';
   }
 }
+
+// ── Live viewer heartbeat ─────────────────────────────────────────────────────
+(function() {
+  let _sid = localStorage.getItem('fs_sid') || '';
+  async function beat() {
+    try {
+      const r = await fetch('/api/heartbeat', {method:'POST', headers: _sid ? {'X-Session-Id': _sid} : {}});
+      const d = await r.json();
+      if (d.session_id) { _sid = d.session_id; localStorage.setItem('fs_sid', _sid); }
+      const el = document.getElementById('viewerBadge');
+      if (el) el.textContent = '👁 ' + d.viewers + (d.viewers === 1 ? ' live' : ' live');
+    } catch(e) {}
+  }
+  beat();
+  setInterval(beat, 30000);
+})();
 
 // Auto-refresh every 60 seconds
 refreshAll();

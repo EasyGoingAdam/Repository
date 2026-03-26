@@ -11,7 +11,12 @@ from typing import Optional, List
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, asdict, field
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "signals.db")
+# Support a persistent data directory via env var (e.g. Railway Volume mounted at /data)
+_data_dir = os.environ.get(
+    "PERSISTENT_DATA_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "data")
+)
+DB_PATH = os.path.join(_data_dir, "signals.db")
 
 MARKET_SLUG = "us-forces-enter-iran-by-december-31"
 

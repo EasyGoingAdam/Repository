@@ -6,10 +6,15 @@ import sys
 import asyncio
 import threading
 import time
+import uuid
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, JSONResponse
+
+# ── Live viewer tracking ───────────────────────────────────────────────────────
+_viewer_sessions: dict = {}   # session_id -> last_seen (epoch float)
+_VIEWER_TIMEOUT = 90          # seconds of silence before a session expires
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -66,6 +71,17 @@ def _intel_loop():
         print(f"[Intel] Backfill: {result['markets_filled']} markets, {result['total_points']} data points")
     except Exception as e:
         print(f"[Intel] Startup error: {e}")
+
+    # Rebuild signal history from APIs after any cold start
+    try:
+        print("[Intel] Rebuilding signal history from Beacon (GDELT) + Pulse (Twitter)...")
+        for _ in range(3):          # Run 3 beacon cycles immediately to grab recent news
+            run_beacon_cycle()
+        run_pulse_cycle()           # Run pulse once to seed Twitter signals
+        run_command_cycle()
+        print("[Intel] Signal rebuild complete.")
+    except Exception as e:
+        print(f"[Intel] Signal rebuild error: {e}")
 
     cycle = 0
     while True:
@@ -378,6 +394,17 @@ def get_all_signals_api(limit: int = 200):
     """Get all stored signals."""
     signals = get_all_signals(limit=limit)
     return {"signals": signals, "count": len(signals)}
+
+
+@app.get("/api/export/signals")
+def export_all_signals():
+    """Export every stored signal as JSON — use to back up before a redeploy."""
+    signals = get_all_signals(limit=10000)
+    return JSONResponse(
+        content={"signals": signals, "count": len(signals),
+                 "exported_at": datetime.now(timezone.utc).isoformat()},
+        headers={"Content-Disposition": "attachment; filename=signals_export.json"},
+    )
 
 
 @app.post("/api/command/run")
@@ -1037,6 +1064,31 @@ def api_sms_test():
     """Admin: fire a test SMS to all subscribers."""
     send_alert_sms("URGENT", "Test alert — First Strike SMS system is operational.", 70.5)
     return {"triggered": True, "recipient_count": len(get_active_subscribers())}
+
+
+# ── Live Viewer Counter ───────────────────────────────────────────────────────
+
+@app.post("/api/heartbeat")
+def api_heartbeat(request: Request):
+    """Called every 30s by each open browser tab to register presence."""
+    sid = request.headers.get("X-Session-Id", "")
+    if not sid:
+        sid = str(uuid.uuid4())
+    now = time.time()
+    _viewer_sessions[sid] = now
+    # Prune expired sessions
+    expired = [k for k, v in _viewer_sessions.items() if now - v > _VIEWER_TIMEOUT]
+    for k in expired:
+        _viewer_sessions.pop(k, None)
+    return {"session_id": sid, "viewers": len(_viewer_sessions)}
+
+
+@app.get("/api/viewers")
+def api_viewers():
+    """Return current live viewer count."""
+    now = time.time()
+    active = sum(1 for v in _viewer_sessions.values() if now - v <= _VIEWER_TIMEOUT)
+    return {"viewers": active}
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
