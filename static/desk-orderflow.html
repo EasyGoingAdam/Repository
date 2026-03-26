@@ -66,7 +66,14 @@
     .weight-note{font-size:11px;color:var(--muted);background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);border-radius:6px;padding:8px 12px;margin-bottom:12px;line-height:1.6}
 
     /* Chart */
-    .chart-wrap{position:relative;height:200px}
+    .chart-wrap{position:relative;height:280px}
+    .chart-wrap-sm{position:relative;height:150px}
+    .chart-loading{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px}
+    .trend-indicator{margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid var(--border);font-size:12px;line-height:1.5}
+    .hist-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;font-size:11px;text-align:center}
+    .hist-stat-grid .stat-cell{padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.03);border:1px solid var(--border)}
+    .hist-stat-grid .stat-lbl{color:var(--muted);margin-bottom:3px;font-size:10px}
+    .hist-stat-grid .stat-val{font-weight:700}
 
     /* Signal feed */
     .sig-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px}
@@ -191,13 +198,22 @@
         <h2 style="margin:0">📊 Depth Over Time</h2>
         <select id="histHours" onchange="loadHistory()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 8px;border-radius:4px;font-size:11px;font-family:inherit">
           <option value="6">6h</option><option value="12">12h</option>
-          <option value="24" selected>24h</option><option value="48">48h</option>
+          <option value="24">24h</option><option value="48" selected>48h</option>
+          <option value="72">72h</option><option value="168">7d</option>
         </select>
       </div>
-      <div class="chart-wrap"><canvas id="obChart"></canvas></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;font-size:11px;text-align:center">
-        <div><span style="color:var(--muted)">Avg Bid</span><br><strong style="color:var(--green)" id="avgBid">—</strong></div>
-        <div><span style="color:var(--muted)">Avg Ask</span><br><strong style="color:var(--red)" id="avgAsk">—</strong></div>
+      <div class="chart-wrap" id="obChartWrap"><canvas id="obChart"></canvas></div>
+      <div id="trendIndicator" class="trend-indicator" style="display:none"></div>
+
+      <div style="margin-top:16px;margin-bottom:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f97316">Imbalance History</div>
+      <div class="chart-wrap-sm"><canvas id="imbalChart"></canvas></div>
+
+      <div class="hist-stat-grid">
+        <div class="stat-cell"><div class="stat-lbl">Avg Bid</div><strong class="stat-val" style="color:var(--green)" id="avgBid">—</strong></div>
+        <div class="stat-cell"><div class="stat-lbl">Avg Ask</div><strong class="stat-val" style="color:var(--red)" id="avgAsk">—</strong></div>
+        <div class="stat-cell"><div class="stat-lbl">Bid Trend</div><strong class="stat-val" id="bidTrend">—</strong></div>
+        <div class="stat-cell"><div class="stat-lbl">Peak Buyer Dominance</div><strong class="stat-val" style="color:var(--green)" id="peakImbal">—</strong></div>
+        <div class="stat-cell" style="grid-column:span 2"><div class="stat-lbl">Current Bid vs Window Avg</div><strong class="stat-val" id="curVsAvg">—</strong></div>
       </div>
     </div>
 
@@ -223,6 +239,7 @@
 
 <script>
 let obChartInst = null;
+let imbalChartInst = null;
 
 async function api(path) {
   const r = await fetch(path);
@@ -327,50 +344,222 @@ async function loadLiveOB() {
 }
 
 async function loadHistory() {
-  const hours = document.getElementById('histHours').value;
-  try {
-    const d = await api(`/api/orderbook/history?hours=${hours}&range=0.12`);
-    const snaps = d.snapshots||[];
-    const ctx = document.getElementById('obChart').getContext('2d');
-    if(obChartInst){ obChartInst.destroy(); obChartInst=null; }
+  const hours = parseInt(document.getElementById('histHours').value, 10);
 
-    if(!snaps.length) {
+  // Show loading state
+  const wrap = document.getElementById('obChartWrap');
+  wrap.innerHTML = '<div class="chart-loading">Loading chart data…</div>';
+
+  if (obChartInst) { obChartInst.destroy(); obChartInst = null; }
+  if (imbalChartInst) { imbalChartInst.destroy(); imbalChartInst = null; }
+
+  try {
+    const d = await api(`/api/orderbook/history?hours=${hours}&range=0.15`);
+    const snaps = d.snapshots || [];
+
+    // Restore canvas after loading indicator
+    wrap.innerHTML = '<canvas id="obChart"></canvas>';
+    const ctx = document.getElementById('obChart').getContext('2d');
+
+    // ── Empty state ────────────────────────────────────────────────────────
+    if (snaps.length === 0) {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       ctx.fillStyle = '#64748b';
       ctx.textAlign = 'center';
       ctx.font = '13px "Courier New", monospace';
-      ctx.fillText('Collecting data — snapshots taken every 2 min', ctx.canvas.width/2, ctx.canvas.height/2 - 10);
+      ctx.fillText('Collecting order book snapshots — snapshots taken every 2 minutes, check back in a few minutes', ctx.canvas.width / 2, ctx.canvas.height / 2 - 10);
       ctx.font = '11px "Courier New", monospace';
-      ctx.fillText('Check back shortly', ctx.canvas.width/2, ctx.canvas.height/2 + 12);
+      ctx.fillText('No snapshots yet', ctx.canvas.width / 2, ctx.canvas.height / 2 + 14);
+      document.getElementById('trendIndicator').style.display = 'none';
+      ['avgBid','avgAsk','bidTrend','peakImbal','curVsAvg'].forEach(id => { document.getElementById(id).textContent = '—'; });
       return;
     }
 
     const sparse = snaps.length < 15;
-    const avgBid = snaps.reduce((a,s)=>a+s.bid_depth,0)/snaps.length;
-    const avgAsk = snaps.reduce((a,s)=>a+s.ask_depth,0)/snaps.length;
+
+    // ── Format labels based on window length ──────────────────────────────
+    const fmtLabel = (ts) => {
+      const t = new Date(ts);
+      if (hours >= 48) {
+        return t.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+               t.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      }
+      return t.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const labels    = snaps.map(s => fmtLabel(s.timestamp));
+    const bidData   = snaps.map(s => s.bid_depth);
+    const askData   = snaps.map(s => s.ask_depth);
+    const priceData = snaps.map(s => (s.yes_price || 0) * 100);
+    const imbalData = snaps.map(s => {
+      const tot = (s.bid_depth || 0) + (s.ask_depth || 0);
+      return tot > 0 ? ((s.bid_depth - s.ask_depth) / tot) : 0;
+    });
+
+    // ── Summary stats ─────────────────────────────────────────────────────
+    const avgBid = bidData.reduce((a, v) => a + v, 0) / bidData.length;
+    const avgAsk = askData.reduce((a, v) => a + v, 0) / askData.length;
     document.getElementById('avgBid').textContent = fmtMoney(avgBid);
     document.getElementById('avgAsk').textContent = fmtMoney(avgAsk);
 
-    const labels   = snaps.map(s=>{const t=new Date(s.timestamp);return t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});});
-    const bidData  = snaps.map(s=>s.bid_depth);
-    const askData  = snaps.map(s=>s.ask_depth);
-    const priceData= snaps.map(s=>(s.yes_price||0)*100);
-    obChartInst = new Chart(ctx,{
-      data:{labels,datasets:[
-        {type:'line',label:'Bid $',data:bidData,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',borderWidth:2,pointRadius:sparse?4:0,pointBackgroundColor:'#22c55e',fill:true,tension:sparse?0:.3,yAxisID:'yD'},
-        {type:'line',label:'Ask $',data:askData,borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.1)',borderWidth:2,pointRadius:sparse?4:0,pointBackgroundColor:'#ef4444',fill:true,tension:sparse?0:.3,yAxisID:'yD'},
-        {type:'line',label:'YES %',data:priceData,borderColor:'#3b82f6',backgroundColor:'transparent',borderWidth:1.5,borderDash:[4,3],pointRadius:sparse?3:0,pointBackgroundColor:'#3b82f6',tension:sparse?0:.3,yAxisID:'yP'},
-      ]},
-      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-        plugins:{legend:{display:true,position:'top',labels:{color:'#64748b',font:{size:10},boxWidth:10,padding:10}},
-          tooltip:{callbacks:{label:c=>c.dataset.yAxisID==='yP'?'YES: '+c.parsed.y.toFixed(1)+'%':c.dataset.label+': $'+c.parsed.y.toLocaleString('en',{maximumFractionDigits:0})}}},
-        scales:{
-          x:{ticks:{color:'#64748b',maxTicksLimit:8,font:{size:10}},grid:{color:'#1a2535'}},
-          yD:{position:'left',ticks:{color:'#64748b',font:{size:10},callback:v=>v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+v},grid:{color:'#1a2535'}},
-          yP:{position:'right',ticks:{color:'#3b82f6',font:{size:10},callback:v=>v+'%'},grid:{display:false}}
-        }}
+    // Bid trend: compare first quarter avg to last quarter avg
+    const qLen = Math.max(1, Math.floor(snaps.length / 4));
+    const firstQBid = bidData.slice(0, qLen).reduce((a, v) => a + v, 0) / qLen;
+    const lastQBid  = bidData.slice(-qLen).reduce((a, v) => a + v, 0) / qLen;
+    const bidTrendPct = firstQBid > 0 ? ((lastQBid - firstQBid) / firstQBid * 100) : 0;
+    const bidTrendEl = document.getElementById('bidTrend');
+    if (Math.abs(bidTrendPct) < 1) {
+      bidTrendEl.textContent = 'Flat over window';
+      bidTrendEl.style.color = 'var(--muted)';
+    } else if (bidTrendPct > 0) {
+      bidTrendEl.textContent = `Bids up ${bidTrendPct.toFixed(1)}%`;
+      bidTrendEl.style.color = 'var(--green)';
+    } else {
+      bidTrendEl.textContent = `Bids down ${Math.abs(bidTrendPct).toFixed(1)}%`;
+      bidTrendEl.style.color = 'var(--red)';
+    }
+
+    // Peak imbalance (most buyer-dominant)
+    let peakIdx = 0, peakVal = -Infinity;
+    imbalData.forEach((v, i) => { if (v > peakVal) { peakVal = v; peakIdx = i; } });
+    const peakTime = new Date(snaps[peakIdx].timestamp).toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    document.getElementById('peakImbal').textContent = `+${(peakVal * 100).toFixed(1)}% at ${peakTime}`;
+
+    // Current bid vs avg
+    const curBid = bidData[bidData.length - 1] || 0;
+    const diffVsAvg = avgBid > 0 ? ((curBid - avgBid) / avgBid * 100) : 0;
+    const curVsAvgEl = document.getElementById('curVsAvg');
+    curVsAvgEl.textContent = `${fmtMoney(curBid)} vs ${hours}h avg ${fmtMoney(avgBid)} (${diffVsAvg >= 0 ? '+' : ''}${diffVsAvg.toFixed(1)}%)`;
+    curVsAvgEl.style.color = diffVsAvg >= 0 ? 'var(--green)' : 'var(--red)';
+
+    // ── Trend indicator text ───────────────────────────────────────────────
+    const trendEl = document.getElementById('trendIndicator');
+    trendEl.style.display = 'block';
+    let trendDir, trendColor, trendInterp;
+    if (bidTrendPct > 5) {
+      trendDir = 'trending up'; trendColor = 'var(--green)';
+      trendInterp = 'Buy-side liquidity is growing — market participants adding bids.';
+    } else if (bidTrendPct < -5) {
+      trendDir = 'trending down'; trendColor = 'var(--red)';
+      trendInterp = 'Buy-side liquidity thinning — possible sell pressure building.';
+    } else {
+      trendDir = 'flat'; trendColor = 'var(--muted)';
+      trendInterp = 'Order book depth stable over the selected window.';
+    }
+    trendEl.innerHTML = `<span style="color:${trendColor};font-weight:700">Bid depth ${trendDir}</span> over ${hours}h window — <span style="color:var(--muted)">${trendInterp}</span>`;
+
+    // ── Main chart (bid/ask depth + YES price) ────────────────────────────
+    const maxTicks = hours >= 72 ? 10 : 8;
+    obChartInst = new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'line', label: 'Bid Depth $', data: bidData,
+            borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.12)',
+            borderWidth: 2, pointRadius: sparse ? 4 : 0, pointBackgroundColor: '#22c55e',
+            fill: true, tension: sparse ? 0 : 0.3, yAxisID: 'yD'
+          },
+          {
+            type: 'line', label: 'Ask Depth $', data: askData,
+            borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.12)',
+            borderWidth: 2, pointRadius: sparse ? 4 : 0, pointBackgroundColor: '#ef4444',
+            fill: true, tension: sparse ? 0 : 0.3, yAxisID: 'yD'
+          },
+          {
+            type: 'line', label: 'YES %', data: priceData,
+            borderColor: '#3b82f6', backgroundColor: 'transparent',
+            borderWidth: 1.5, borderDash: [4, 3],
+            pointRadius: sparse ? 3 : 0, pointBackgroundColor: '#3b82f6',
+            tension: sparse ? 0 : 0.3, yAxisID: 'yP'
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: true, position: 'top',
+            labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 12, padding: 12 }
+          },
+          tooltip: {
+            callbacks: {
+              label: c => c.dataset.yAxisID === 'yP'
+                ? 'YES: ' + c.parsed.y.toFixed(1) + '%'
+                : c.dataset.label + ': ' + fmtMoney(c.parsed.y)
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#64748b', maxTicksLimit: maxTicks, font: { size: 10 }, maxRotation: 30 },
+            grid: { color: '#1a2535' },
+            title: { display: true, text: 'Time', color: '#64748b', font: { size: 10 } }
+          },
+          yD: {
+            position: 'left',
+            ticks: { color: '#64748b', font: { size: 10 }, callback: v => v >= 1000 ? '$' + (v / 1000).toFixed(0) + 'K' : '$' + v },
+            grid: { color: '#1a2535' },
+            title: { display: true, text: 'Depth ($)', color: '#64748b', font: { size: 10 } }
+          },
+          yP: {
+            position: 'right',
+            ticks: { color: '#3b82f6', font: { size: 10 }, callback: v => v.toFixed(0) + '%' },
+            grid: { display: false },
+            title: { display: true, text: 'YES Price', color: '#3b82f6', font: { size: 10 } }
+          }
+        }
+      }
     });
-  } catch(e) { console.error('history', e); }
+
+    // ── Imbalance History bar chart ────────────────────────────────────────
+    const imbalCtx = document.getElementById('imbalChart').getContext('2d');
+    imbalChartInst = new Chart(imbalCtx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Bid-Ask Imbalance',
+          data: imbalData.map(v => parseFloat((v * 100).toFixed(2))),
+          backgroundColor: imbalData.map(v => v >= 0 ? 'rgba(34,197,94,.65)' : 'rgba(239,68,68,.65)'),
+          borderColor:     imbalData.map(v => v >= 0 ? '#22c55e' : '#ef4444'),
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: c => {
+                const v = c.parsed.y;
+                return (v >= 0 ? 'Buyer dominant: +' : 'Seller dominant: ') + v.toFixed(1) + '%';
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#64748b', maxTicksLimit: maxTicks, font: { size: 9 }, maxRotation: 30 },
+            grid: { color: '#1a2535' }
+          },
+          y: {
+            ticks: { color: '#64748b', font: { size: 9 }, callback: v => v + '%' },
+            grid: { color: '#1a2535' },
+            title: { display: true, text: 'Imbalance %', color: '#64748b', font: { size: 9 } }
+          }
+        }
+      }
+    });
+
+  } catch (e) {
+    console.error('history', e);
+    const wrap2 = document.getElementById('obChartWrap');
+    wrap2.innerHTML = '<div class="chart-loading" style="color:var(--red)">Failed to load chart data</div>';
+  }
 }
 
 async function loadSignals() {

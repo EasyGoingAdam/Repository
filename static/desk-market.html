@@ -59,6 +59,11 @@
     .sig-table tr:last-child td{border:none}
     .empty{color:var(--muted);font-size:13px;text-align:center;padding:32px}
     ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+    /* First Mover pulse animation */
+    @keyframes fmPulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .fm-hot-pulse{animation:fmPulse 1.2s ease-in-out infinite}
+    .fm-score-bar-wrap{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:100%;max-width:120px}
+    .fm-score-bar-fill{height:100%;border-radius:2px;transition:width .5s}
   </style>
 </head>
 <body>
@@ -85,18 +90,20 @@
 
 <div class="container">
 
+  <!-- Stats Row -->
   <div class="stats-row">
     <div class="stat"><div class="lbl">YES Price</div><div class="val" style="color:var(--blue)" id="sYes">—</div><div class="sub">market price</div></div>
     <div class="stat"><div class="lbl">Our Model</div><div class="val" style="color:#22c55e" id="sPred">—</div><div class="sub" id="sPredConf">confidence —</div></div>
     <div class="stat"><div class="lbl">Model Edge</div><div class="val" id="sEdge">—</div><div class="sub" id="sEdgeLabel">—</div></div>
+    <div class="stat"><div class="lbl">First Mover</div><div class="val" id="sFM" style="font-size:18px;color:var(--muted)">—</div><div class="sub">last 4h pulse</div></div>
     <div class="stat"><div class="lbl">Volume</div><div class="val" id="sVol">—</div><div class="sub">total traded</div></div>
     <div class="stat"><div class="lbl">Liquidity</div><div class="val" id="sLiq">—</div><div class="sub">in book</div></div>
     <div class="stat"><div class="lbl">Market Signals</div><div class="val" style="color:#22c55e" id="sSigCount">—</div><div class="sub">last 48h</div></div>
   </div>
 
-  <!-- Model vs Market -->
+  <!-- Section 1: PREDICTION — Model vs Market -->
   <div class="card">
-    <h2>📊 Model vs Market</h2>
+    <h2>📊 PREDICTION — Model vs Market Edge</h2>
     <div class="vs-row">
       <div class="vs-side">
         <div class="vs-title">Market Price</div>
@@ -118,6 +125,31 @@
       <span>Market overpriced</span><span>Fairly priced</span><span>Market underpriced</span>
     </div>
     <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text)" id="edgeVerdict">—</div>
+  </div>
+
+  <!-- Section 2: FIRST MOVER — Breaking Intelligence -->
+  <div class="card" id="fmCard" style="border-left:4px solid var(--border)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <h2 style="margin:0">⚡ FIRST MOVER — Breaking Intelligence (Pulse/X)</h2>
+      <button class="refresh-btn" onclick="loadFirstMover()">↻ Refresh</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Breaking X/Twitter signals that haven't been priced in yet — the window between "signal hits" and "market adjusts"</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:12px" id="fmBadge">Loading...</div>
+    <div id="fmList"><div class="empty">Loading First Mover data...</div></div>
+  </div>
+
+  <!-- Section 3: VOLATILITY — compact summary linking to full desk -->
+  <div class="card" id="volSummaryCard">
+    <h2>⚡ VOLATILITY — Price Range Trading</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div style="display:flex;gap:20px;flex-wrap:wrap" id="volSummaryStats">
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:2px">24h HIGH</div><div style="font-size:20px;font-weight:700;color:var(--green)" id="volHigh">—</div></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:2px">24h LOW</div><div style="font-size:20px;font-weight:700;color:var(--red)" id="volLow">—</div></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:2px">24h RANGE</div><div style="font-size:20px;font-weight:700;color:var(--yellow)" id="volRange">—</div></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:2px">24h CHANGE</div><div style="font-size:20px;font-weight:700" id="volChange">—</div></div>
+      </div>
+      <a href="/volatility" style="background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.3);color:var(--yellow);padding:8px 18px;border-radius:5px;font-size:11px;font-weight:700;text-decoration:none;letter-spacing:.06em">→ Full Volatility Desk</a>
+    </div>
   </div>
 
   <!-- Price history chart + signals side by side -->
@@ -175,6 +207,7 @@ function fmtMoney(n) {
   if (n>=1000) return '$'+(n/1000).toFixed(1)+'K';
   return '$'+n.toFixed(0);
 }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 async function loadMarket() {
   try {
@@ -370,15 +403,96 @@ function renderEdgeBreakdown(ana) {
   el.innerHTML = rows + verdict;
 }
 
+async function loadFirstMover() {
+  try {
+    const d = await api('/api/first-mover');
+
+    // Update stat chip
+    const fmStat = document.getElementById('sFM');
+    fmStat.textContent = d.alert;
+    fmStat.style.color = d.alert==='HOT' ? 'var(--red)' : d.alert==='WARM' ? 'var(--yellow)' : 'var(--muted)';
+
+    // Update First Mover card
+    const card = document.getElementById('fmCard');
+    const badge = document.getElementById('fmBadge');
+
+    // Set card left border color
+    card.style.borderLeftColor = d.alert==='HOT' ? 'var(--red)' : d.alert==='WARM' ? 'var(--yellow)' : 'var(--border)';
+    card.style.borderLeftWidth = '4px';
+    card.style.borderLeftStyle = 'solid';
+
+    const isHot = d.alert === 'HOT';
+    badge.className = isHot ? 'fm-hot-pulse' : '';
+    badge.textContent = d.alert==='HOT' ? '🔴 HOT — ACT NOW' : d.alert==='WARM' ? '🟡 WARM — MONITOR' : '⚪ CLEAR';
+    badge.style.color = d.alert==='HOT' ? 'var(--red)' : d.alert==='WARM' ? 'var(--yellow)' : 'var(--muted)';
+
+    const list = document.getElementById('fmList');
+    if (!d.opportunities || !d.opportunities.length) {
+      list.innerHTML = '<div style="color:var(--muted);padding:12px 0">No high-importance Pulse signals in last 4 hours. Monitoring X/Twitter...</div>';
+      return;
+    }
+
+    list.innerHTML = d.opportunities.slice(0,4).map(op => {
+      const gradeColor = op.grade==='HOT' ? 'var(--red)' : op.grade==='WARM' ? 'var(--yellow)' : 'var(--muted)';
+      const dirColor = op.signal_direction==='bullish' ? 'var(--green)' : op.signal_direction==='bearish' ? 'var(--red)' : 'var(--muted)';
+      const dirArrow = op.signal_direction==='bullish' ? '▲' : op.signal_direction==='bearish' ? '▼' : '—';
+      const reacted = op.market_reacted;
+      const impactStr = op.expected_impact_pp ? (op.expected_impact_pp > 0 ? '+' : '') + op.expected_impact_pp + 'pp expected' : '';
+      const fmBarWidth = Math.min(100, Math.round(op.first_mover_score * 100));
+      const fmBarColor = op.grade==='HOT' ? 'var(--red)' : op.grade==='WARM' ? 'var(--yellow)' : 'var(--muted)';
+      return `<div style="border-bottom:1px solid var(--border);padding:10px 0;font-size:12px">
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:4px">
+          <span style="background:rgba(255,255,255,.06);color:${gradeColor};border:1px solid ${gradeColor};padding:1px 7px;border-radius:3px;font-size:9px;font-weight:700;flex-shrink:0">${op.grade}</span>
+          <span style="color:var(--muted);font-size:10px;flex-shrink:0">${op.age_minutes}m ago</span>
+          <span style="color:${dirColor};font-weight:700;flex-shrink:0">${dirArrow}</span>
+          <span style="color:var(--text);font-weight:600;flex:1;line-height:1.4">${esc(op.headline)}</span>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--muted);padding-left:4px;margin-bottom:4px">
+          ${impactStr ? '<span style="color:'+dirColor+'">'+esc(impactStr)+'</span>' : ''}
+          ${reacted
+            ? '<span>Market moved '+op.price_change_pp+'pp since signal</span>'
+            : '<span style="color:var(--green);font-weight:700">← Market has NOT reacted — OPPORTUNITY</span>'}
+          <span>I:${op.importance} FM:${(op.first_mover_score*100).toFixed(0)}%</span>
+        </div>
+        <div class="fm-score-bar-wrap"><div class="fm-score-bar-fill" style="width:${fmBarWidth}%;background:${fmBarColor}"></div></div>
+      </div>`;
+    }).join('');
+
+  } catch(e) {
+    console.error('first mover', e);
+    document.getElementById('fmBadge').textContent = '⚠ Error loading First Mover data';
+    document.getElementById('fmBadge').style.color = 'var(--muted)';
+  }
+}
+
+async function loadVolatilitySummary() {
+  try {
+    const d = await api('/api/volatility/iran/summary?hours=24');
+    const w24 = d.windows && d.windows['24h'];
+    if (w24) {
+      document.getElementById('volHigh').textContent = w24.high != null ? w24.high.toFixed(1)+'¢' : '—';
+      document.getElementById('volLow').textContent  = w24.low  != null ? w24.low.toFixed(1)+'¢'  : '—';
+      document.getElementById('volRange').textContent = w24.range_pct != null ? w24.range_pct.toFixed(1)+'pp' : '—';
+      const chgEl = document.getElementById('volChange');
+      const chg = w24.change_pct;
+      if (chg != null) {
+        chgEl.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(1) + 'pp';
+        chgEl.style.color = chg > 0 ? 'var(--green)' : chg < 0 ? 'var(--red)' : 'var(--muted)';
+      }
+    }
+  } catch(e) { console.error('vol summary', e); }
+}
+
 async function loadAll() {
-  await Promise.all([loadMarket(), loadPriceHistory(), loadSignals()]);
+  await Promise.all([loadMarket(), loadPriceHistory(), loadSignals(), loadFirstMover(), loadVolatilitySummary()]);
   document.getElementById('lastScan').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 
-function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
 loadAll();
 setInterval(loadAll, 30000);
+
+// First Mover refreshes every 60s independently (time-sensitive data)
+setInterval(loadFirstMover, 60000);
 
 // ── Live viewer heartbeat ──────────────────────────────────────────────────
 (function() {

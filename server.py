@@ -131,6 +131,22 @@ def _intel_loop():
             run_pulse_cycle()
             cmd_state = run_command_cycle()
 
+            # ── First Mover: alert on fresh high-importance Pulse signals ─────
+            try:
+                fresh_pulse = get_recent_signals(hours=0.5, source='pulse', limit=5)  # last 30 min
+                for sig in fresh_pulse:
+                    if (sig.get('importance_score', 0) >= 75 and
+                            sig.get('signal_direction') in ('bullish', 'bearish')):
+                        # This is a First Mover signal — alert immediately
+                        fm_headline = f"[FIRST MOVER] {sig.get('headline', '')}"
+                        fm_impact = sig.get('probability_impact_estimate', 0)
+                        alert_msg = f"{fm_headline} | Expected: {'+' if fm_impact>0 else ''}{fm_impact:.1f}pp"
+                        send_alert_email("URGENT", alert_msg, cmd_state.get("market_odds"))
+                        print(f"[Intel] First Mover alert fired: {fm_headline[:60]}")
+                        break  # Only one alert per cycle
+            except Exception as e:
+                print(f"[Intel] First Mover check error: {e}")
+
             # ── SMS alert if URGENT or IMPORTANT ──────────────────────────────
             alert_lvl = cmd_state.get("alert_level", "")
             if alert_lvl in ("URGENT", "IMPORTANT"):
@@ -834,11 +850,15 @@ def api_all_latest_prices():
 
 
 @app.get("/api/volatility/iran/summary")
-def api_iran_volatility_summary():
+def api_iran_volatility_summary(hours: int = 24):
     """
     Comprehensive volatility summary for the Iran YES (boots on ground) market.
     Returns high/low/range/change across 1h, 8h, 24h, 7d windows
-    plus Bollinger bands, z-score, and a limit-price recommendation.
+    plus Bollinger bands, z-score, percentiles, and a percentile-based bid recommendation.
+
+    Query params:
+      hours: int — timeframe for chart data and selected-window analysis (default 24).
+             Supported: 1, 6, 12, 24, 72, 168, 720
     """
     import statistics as _stats
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
@@ -846,6 +866,11 @@ def api_iran_volatility_summary():
     market = polyapi.find_iran_boots_market()
     if not market:
         raise HTTPException(status_code=404, detail="Market not found")
+
+    # Clamp hours to supported options
+    _valid_hours = [1, 6, 12, 24, 72, 168, 720]
+    if hours not in _valid_hours:
+        hours = min(_valid_hours, key=lambda h: abs(h - hours))
 
     # Resolve market_id: look for the boots/forces-enter market in the watchlist.
     # Try multiple keyword matches ranked by specificity.
@@ -864,10 +889,11 @@ def api_iran_volatility_summary():
                                   for k in IRAN_KEYWORDS)), None)
     market_id = iran_entry["market_id"] if iran_entry else str(market.id)
 
-    # Fetch 7 days of price snapshots; also try the API market.id as fallback
-    all_snaps = get_price_snapshots(market_id, hours=168)
+    # Fetch enough history to cover the requested window (at least 7d for the fixed windows)
+    fetch_hours = max(hours, 168)
+    all_snaps = get_price_snapshots(market_id, hours=fetch_hours)
     if not all_snaps and str(market.id) != market_id:
-        all_snaps = get_price_snapshots(str(market.id), hours=168)
+        all_snaps = get_price_snapshots(str(market.id), hours=fetch_hours)
 
     now = _dt.now(_tz.utc)
 
@@ -879,8 +905,8 @@ def api_iran_volatility_summary():
     }
     all_snaps = list(all_snaps) + [live_snap]
 
-    def _window(hours: int):
-        cutoff = now - _td(hours=hours)
+    def _window(win_hours: int):
+        cutoff = now - _td(hours=win_hours)
         pts = []
         for s in all_snaps:
             ts_raw = s.get("timestamp", "")
@@ -920,57 +946,108 @@ def api_iran_volatility_summary():
     cur = market.yes_price
     cur_pct = round(cur * 100, 2)
 
-    # ── Limit-price recommendation ────────────────────────────────────────────
-    # Use 24h window as primary signal; fall back to 8h or 1h
-    ref = windows.get("24h") or windows.get("8h") or windows.get("1h")
-    rec = {"timing": "insufficient_data", "suggested_limit": None, "reasoning": "Not enough price history yet."}
-    if ref:
-        z = ref["z_score"]
-        std = ref["std_dev_pct"]
-        mean = ref["mean"]
-        boll_lo = ref["bollinger_lower"]
-        boll_hi = ref["bollinger_upper"]
+    # ── Selected window (based on requested hours) ─────────────────────────────
+    # Build a window for the exact requested timeframe
+    def _window_prices(win_hours: int):
+        """Return sorted list of prices (as ¢, ×100) in the given window."""
+        cutoff = now - _td(hours=win_hours)
+        pts = []
+        for s in all_snaps:
+            ts_raw = s.get("timestamp", "")
+            try:
+                ts = _dt.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                if ts >= cutoff and s.get("yes_price") is not None:
+                    pts.append(round(float(s["yes_price"]) * 100, 4))
+            except Exception:
+                pass
+        return sorted(pts)
 
-        if z < -2.0:
-            timing = "strong_buy"
-            limit  = round(cur_pct + 0.3, 2)      # near market — will fill fast
-            reason = f"Price is {abs(z):.1f}σ below 24h mean ({mean:.1f}¢). Very underpriced vs historical range. Buy at or near market."
-        elif z < -1.0:
-            timing = "buy"
-            limit  = round(max(boll_lo, cur_pct - std * 0.5), 2)
-            reason = f"Price is {abs(z):.1f}σ below mean. Pull limit slightly below market to capture intra-day dip."
-        elif z < 0:
-            timing = "mild_buy"
-            limit  = round(cur_pct - std * 0.8, 2)
-            reason = f"Price slightly below 24h mean. Set limit ~{std*0.8:.1f}¢ below current to catch a dip."
-        elif z < 1.0:
-            timing = "neutral_wait"
-            limit  = round(mean - std * 0.5, 2)
-            reason = f"Price near fair value. Be patient — set limit near 24h mean ({mean:.1f}¢) to save vs current."
-        else:
-            timing = "overpriced_wait"
-            limit  = round(mean, 2)
-            reason = f"Price {z:.1f}σ ABOVE 24h mean. Likely to revert. Target limit near mean ({mean:.1f}¢)."
+    sel_prices = _window_prices(hours)
 
-        rec = {
-            "timing": timing,
-            "suggested_limit": limit,
-            "reasoning": reason,
-            "bollinger_lower": boll_lo,
-            "bollinger_upper": boll_hi,
-            "mean_24h": mean,
-            "z_score_24h": z,
+    # ── Percentiles ────────────────────────────────────────────────────────────
+    def _pct(prices, pct):
+        if not prices:
+            return None
+        idx = int(len(prices) * pct / 100)
+        idx = min(idx, len(prices) - 1)
+        return round(prices[idx], 2)
+
+    percentiles = None
+    if sel_prices:
+        percentiles = {
+            "p5":  _pct(sel_prices, 5),
+            "p10": _pct(sel_prices, 10),
+            "p25": _pct(sel_prices, 25),
+            "p50": _pct(sel_prices, 50),
+            "p75": _pct(sel_prices, 75),
+            "p90": _pct(sel_prices, 90),
+            "p95": _pct(sel_prices, 95),
         }
 
-    # Recent price series for chart (last 24h, max 200 points)
-    # all_snaps already includes the live_snap appended above, so chart is current
+    # ── Recommendation (percentile-based) ─────────────────────────────────────
+    rec = {"action": "INSUFFICIENT_DATA", "recommended_bid": None, "reasoning": "Not enough price history yet."}
+    if percentiles and len(sel_prices) >= 5:
+        floor_price   = percentiles["p10"]
+        value_price   = percentiles["p25"]
+        fair_price    = percentiles["p50"]
+        ceiling_price = percentiles["p75"]
+
+        price_range = (sel_prices[-1] - sel_prices[0]) if sel_prices else 0
+
+        if price_range < 1.0:
+            # Low volatility — price is stable
+            recommended_bid = round(cur_pct - 0.5, 1)
+            action = "STABLE"
+            reasoning = (
+                f"Low volatility detected — price range is only {price_range:.1f}¢ over the selected window. "
+                f"Price is stable near {cur_pct:.1f}¢. Bid just below current price."
+            )
+        else:
+            recommended_bid = round(max(floor_price + 0.5, value_price - 1.0), 1)
+
+            if cur_pct >= ceiling_price:
+                action = "WAIT"
+                reasoning = (
+                    f"Price ({cur_pct:.1f}¢) is at or above the 75th percentile ({ceiling_price:.1f}¢) — overpriced zone. "
+                    f"Wait for a pullback toward value ({value_price:.1f}¢) or set a patient limit at {recommended_bid:.1f}¢."
+                )
+            elif cur_pct > value_price:
+                action = "BUY_DIP"
+                reasoning = (
+                    f"Price ({cur_pct:.1f}¢) is above the 25th percentile value zone ({value_price:.1f}¢). "
+                    f"Set a limit bid at {recommended_bid:.1f}¢ to buy near the bottom of the observed range."
+                )
+            elif cur_pct > floor_price:
+                action = "BUY_NOW"
+                reasoning = (
+                    f"Price ({cur_pct:.1f}¢) is in the value zone (between P10 {floor_price:.1f}¢ and P25 {value_price:.1f}¢). "
+                    f"Good entry — recommended limit: {recommended_bid:.1f}¢."
+                )
+            else:
+                action = "STRONG_BUY"
+                reasoning = (
+                    f"Price ({cur_pct:.1f}¢) is at or below the 10th percentile floor ({floor_price:.1f}¢). "
+                    f"Historically cheap — strong buy signal. Recommended limit: {recommended_bid:.1f}¢."
+                )
+
+        rec = {
+            "action":           action,
+            "recommended_bid":  recommended_bid,
+            "floor_price":      floor_price,
+            "value_price":      value_price,
+            "fair_price":       fair_price,
+            "ceiling_price":    ceiling_price,
+            "reasoning":        reasoning,
+        }
+
+    # ── Chart data for selected timeframe (max 300 points) ────────────────────
     chart_snaps = []
-    cutoff_24h = now - _td(hours=24)
+    chart_cutoff = now - _td(hours=hours)
     for s in all_snaps:
         ts_raw = s.get("timestamp", "")
         try:
             ts = _dt.fromisoformat(ts_raw.replace("Z", "+00:00"))
-            if ts >= cutoff_24h and s.get("yes_price") is not None:
+            if ts >= chart_cutoff and s.get("yes_price") is not None:
                 chart_snaps.append({"t": ts_raw, "p": round(float(s["yes_price"]) * 100, 2)})
         except Exception:
             pass
@@ -978,16 +1055,18 @@ def api_iran_volatility_summary():
     seen = {}
     for pt in chart_snaps:
         seen[pt["t"][:16]] = pt   # minute-level dedup key
-    chart_snaps = sorted(seen.values(), key=lambda x: x["t"])[-200:]
+    chart_snaps = sorted(seen.values(), key=lambda x: x["t"])[-300:]
 
     return {
-        "market_id": market_id,
-        "question":  market.question,
+        "market_id":         market_id,
+        "question":          market.question,
         "current_price_pct": cur_pct,
-        "windows": windows,
-        "recommendation": rec,
-        "chart": chart_snaps,
-        "snapshot_count": len(all_snaps),
+        "selected_hours":    hours,
+        "windows":           windows,
+        "percentiles":       percentiles,
+        "recommendation":    rec,
+        "chart":             chart_snaps,
+        "snapshot_count":    len(all_snaps),
     }
 
 
@@ -1009,6 +1088,145 @@ def api_volatility_opportunities(threshold: float = 1.5):
 def api_all_volatility():
     all_vol = get_all_latest_volatility()
     return {"metrics": all_vol, "count": len(all_vol)}
+
+
+@app.get("/api/first-mover")
+def api_first_mover():
+    """
+    First Mover opportunities: high-importance Pulse signals that
+    the market may not have priced in yet.
+    """
+    from datetime import timedelta as _td2
+
+    # Get pulse signals from last 4 hours only
+    pulse_sigs = get_recent_signals(hours=4, source='pulse', limit=20)
+
+    # Get current market data
+    market = polyapi.find_iran_boots_market()
+    cur_price = market.yes_price if market else None
+
+    # Resolve market_id same way as volatility endpoint
+    watchlist = get_managed_watchlist()
+    BOOTS_KEYWORDS = ["forces enter", "boots", "ground troops", "military enter"]
+    IRAN_KEYWORDS  = ["iran"]
+    iran_entry = None
+    for kw in BOOTS_KEYWORDS:
+        iran_entry = next((w for w in watchlist
+                           if kw in (w.get("question","") + w.get("slug","")).lower()), None)
+        if iran_entry:
+            break
+    if not iran_entry:
+        iran_entry = next((w for w in watchlist
+                           if any(k in (w.get("question","") + w.get("slug","")).lower()
+                                  for k in IRAN_KEYWORDS)), None)
+    market_id = iran_entry["market_id"] if iran_entry else (str(market.id) if market else None)
+
+    # Get price history last 4h for comparison
+    price_snaps = get_price_snapshots(market_id, hours=4) if market_id else []
+
+    opportunities = []
+    now = datetime.now(timezone.utc)
+
+    for sig in pulse_sigs:
+        if not sig.get('timestamp'):
+            continue
+
+        # Signal age in minutes
+        sig_time = datetime.fromisoformat(sig['timestamp'].replace('Z', '+00:00'))
+        age_min = (now - sig_time).total_seconds() / 60
+
+        # Only consider signals from last 4 hours
+        if age_min > 240:
+            continue
+
+        importance = sig.get('importance_score', 0)
+
+        # Only high-importance signals
+        if importance < 55:
+            continue
+
+        # Find price AT time of signal (closest snapshot before signal)
+        price_at_signal = None
+        for snap in sorted(price_snaps, key=lambda x: x.get('timestamp', '')):
+            snap_t = datetime.fromisoformat(snap['timestamp'].replace('Z', '+00:00'))
+            if snap_t <= sig_time:
+                price_at_signal = snap.get('yes_price')
+
+        # Price change since signal
+        price_change = None
+        if price_at_signal and cur_price:
+            price_change = (cur_price - price_at_signal) * 100
+
+        # Expected impact from the signal
+        expected_impact = sig.get('probability_impact_estimate', 0) or 0
+
+        # First Mover Score:
+        # High = signal is recent, high importance, and market hasn't moved to reflect it
+        recency_score = max(0, 1 - age_min / 240)  # decays over 4 hours
+        importance_score_norm = importance / 100
+
+        # If the market moved in the expected direction, opportunity has passed
+        if expected_impact > 0 and price_change and price_change > expected_impact * 0.8:
+            market_reacted = True
+            remaining_opportunity = max(0, expected_impact - price_change)
+        elif expected_impact < 0 and price_change and price_change < expected_impact * 0.8:
+            market_reacted = True
+            remaining_opportunity = max(0, abs(expected_impact) - abs(price_change))
+        else:
+            market_reacted = False
+            remaining_opportunity = abs(expected_impact)
+
+        fm_score = recency_score * importance_score_norm * (1.5 if not market_reacted else 0.5)
+
+        # Grade: HOT (fresh, important, unpriced), WARM (semi-fresh), PRICED (market reacted)
+        if fm_score > 0.6:
+            grade = "HOT"
+        elif fm_score > 0.3:
+            grade = "WARM"
+        else:
+            grade = "PRICED"
+
+        opportunities.append({
+            "headline": sig.get('headline', ''),
+            "source": sig.get('source_app', 'pulse'),
+            "timestamp": sig['timestamp'],
+            "age_minutes": round(age_min, 0),
+            "importance": importance,
+            "confidence": sig.get('confidence_score', 0),
+            "signal_direction": sig.get('signal_direction', 'neutral'),
+            "expected_impact_pp": round(expected_impact, 1),
+            "price_at_signal": round(price_at_signal * 100, 1) if price_at_signal else None,
+            "current_price": round(cur_price * 100, 1) if cur_price else None,
+            "price_change_pp": round(price_change, 1) if price_change is not None else None,
+            "market_reacted": market_reacted,
+            "remaining_opportunity_pp": round(remaining_opportunity, 1),
+            "first_mover_score": round(fm_score, 3),
+            "grade": grade,
+            "reasoning": sig.get('reasoning', ''),
+        })
+
+    # Sort by first_mover_score descending
+    opportunities.sort(key=lambda x: x['first_mover_score'], reverse=True)
+
+    # Overall first mover alert level
+    if opportunities and opportunities[0]['grade'] == 'HOT':
+        alert = "HOT"
+        top_headline = opportunities[0]['headline']
+    elif opportunities and opportunities[0]['grade'] == 'WARM':
+        alert = "WARM"
+        top_headline = opportunities[0]['headline']
+    else:
+        alert = "CLEAR"
+        top_headline = "No first mover opportunities in last 4 hours"
+
+    return {
+        "alert": alert,
+        "opportunities": opportunities[:8],
+        "total_pulse_signals_4h": len(pulse_sigs),
+        "current_price": round(cur_price * 100, 1) if cur_price else None,
+        "top_headline": top_headline,
+        "timestamp": now.isoformat(),
+    }
 
 
 @app.get("/api/signals/trading")
