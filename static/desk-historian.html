@@ -65,10 +65,37 @@
     .leader-stance strong{color:var(--text)}
 
     /* Filter bar */
-    .filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+    .filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
     .filter-btn{padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:inherit;transition:all .2s}
     .filter-btn.active{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.4);color:var(--amber)}
     .filter-btn:hover{color:var(--text)}
+
+    /* Zoom controls */
+    .zoom-bar{display:flex;align-items:center;gap:10px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px}
+    .zoom-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+    .zoom-tabs{display:flex;gap:4px;flex-wrap:wrap}
+    .zoom-tab{padding:4px 13px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:inherit;transition:all .2s;white-space:nowrap}
+    .zoom-tab:hover{color:var(--text);border-color:var(--amber)}
+    .zoom-tab.active{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.4);color:var(--amber)}
+    .zoom-desc{font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap}
+
+    /* Compact timeline entry (zoomed out) */
+    .tl-entry-compact{display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid rgba(26,37,53,.8)}
+    .tl-entry-compact:last-child{border-bottom:none}
+    .tl-compact-date{font-size:10px;color:var(--amber);font-weight:700;white-space:nowrap;min-width:70px}
+    .tl-compact-title{font-size:11px;color:var(--text);flex:1}
+    .tl-compact-tags{display:flex;gap:4px;flex-shrink:0}
+
+    /* Signal entry (zoomed in) */
+    .tl-signal{position:relative;margin-bottom:10px;padding-left:36px}
+    .tl-signal::before{content:'';position:absolute;left:5px;top:0;bottom:-10px;width:1px;background:var(--border)}
+    .tl-signal-dot{position:absolute;left:0;top:5px;width:11px;height:11px;border-radius:50%;border:2px solid var(--bg);z-index:1}
+    .tl-signal-time{font-size:10px;color:var(--amber);font-weight:700;margin-bottom:2px}
+    .tl-signal-head{font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px;line-height:1.4}
+    .tl-signal-meta{font-size:10px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+
+    /* Hour divider (zoomed in) */
+    .tl-hour-divider{font-size:10px;color:var(--amber);font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px;margin-bottom:6px;border-top:1px solid rgba(245,158,11,.15);margin-top:8px}
 
     /* Disclaimer */
     .disclaimer{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--red);line-height:1.6;margin-bottom:16px}
@@ -140,8 +167,23 @@
     </div>
   </div>
 
+  <!-- Zoom bar -->
+  <div class="zoom-bar">
+    <span class="zoom-label">🔭 Zoom</span>
+    <div class="zoom-tabs">
+      <button class="zoom-tab" onclick="setZoom('all-time',this)">All Time</button>
+      <button class="zoom-tab" onclick="setZoom('month',this)">1 Month</button>
+      <button class="zoom-tab active" onclick="setZoom('week',this)">7 Days</button>
+      <button class="zoom-tab" onclick="setZoom('day',this)">24 Hours</button>
+      <button class="zoom-tab" onclick="setZoom('6h',this)">6 Hours</button>
+      <button class="zoom-tab" onclick="setZoom('1h',this)">1 Hour</button>
+    </div>
+    <span class="zoom-desc" id="zoomDesc">Showing key events + 7d signals</span>
+  </div>
+
   <!-- Filter bar -->
   <div class="filter-bar">
+    <span style="font-size:10px;color:var(--muted)">Filter:</span>
     <button class="filter-btn active" onclick="setFilter('all',this)">All Events</button>
     <button class="filter-btn" onclick="setFilter('major',this)">🔴 Major</button>
     <button class="filter-btn" onclick="setFilter('military',this)">🪖 Military</button>
@@ -152,29 +194,36 @@
 
   <!-- Timeline -->
   <div class="card">
-    <h2>📅 Event Timeline — Iran / US Military Conflict Probability</h2>
-    <div class="timeline" id="timeline"></div>
-  </div>
-
-  <!-- Signal feed integration -->
-  <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h2 style="margin:0">📡 Recent Intelligence Signals (48h)</h2>
-      <button onclick="loadSignals()" style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--amber);padding:5px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">↻ Refresh</button>
+      <h2 style="margin:0">📅 Event Timeline — Iran / US Military Conflict</h2>
+      <button onclick="refreshTimeline()" style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--amber);padding:4px 11px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">↻ Refresh</button>
     </div>
-    <div id="signalFeed" style="max-height:380px;overflow-y:auto">
-      <div style="color:var(--muted);text-align:center;padding:24px">Loading signals...</div>
-    </div>
+    <div id="zoomInfoBar" style="font-size:11px;color:var(--muted);margin-bottom:12px;padding:6px 10px;background:rgba(245,158,11,.04);border-radius:4px;display:none"></div>
+    <div class="timeline" id="timeline"></div>
   </div>
 
 </div>
 
 <script>
+// ── Zoom state ─────────────────────────────────────────────────────────────────
+let currentZoom   = 'week';   // all-time | month | week | day | 6h | 1h
+let currentFilter = 'all';
+let _liveSignals  = [];       // cached from API
+
+const ZOOM_META = {
+  'all-time': { hours: 99999, label: 'Full history — major milestones only',      sigHours: 0,   compact: true  },
+  'month':    { hours: 720,   label: 'Last 30 days — key events',                 sigHours: 720, compact: false },
+  'week':     { hours: 168,   label: 'Last 7 days — events + intelligence signals',sigHours: 168, compact: false },
+  'day':      { hours: 24,    label: 'Last 24 hours — granular signal view',       sigHours: 24,  compact: false },
+  '6h':       { hours: 6,     label: 'Last 6 hours — high-frequency signal view',  sigHours: 6,   compact: false },
+  '1h':       { hours: 1,     label: 'Last 60 minutes — real-time ticker',         sigHours: 1,   compact: false },
+};
+
 // ── Timeline data ─────────────────────────────────────────────────────────────
-// Each entry: { date, title, body, tags[], category[], quotes[], impact, dotClass, odds_at_time }
+// Each entry: { date, title, body, tags[], category[], quotes[], impact, dotClass, odds_at_time, ts (ISO) }
 const TIMELINE = [
   {
-    date: "Jan 2025",
+    date: "Jan 2025", ts: "2025-01-20T12:00:00Z",
     title: "Trump returns to office, reinstates 'Maximum Pressure' on Iran",
     body: "President Trump reactivated sanctions targeting Iranian oil exports and financial institutions on his first day in office. Treasury sanctioned additional IRGC-linked entities. Iran condemned the move as economic warfare.",
     tags: ["fact"],
@@ -187,7 +236,7 @@ const TIMELINE = [
     ],
   },
   {
-    date: "Feb 2025",
+    date: "Feb 2025", ts: "2025-02-08T00:00:00Z",
     title: "US carrier group USS Harry S. Truman repositioned to Persian Gulf",
     body: "Pentagon confirmed repositioning of the USS Harry S. Truman carrier strike group to the Persian Gulf as a 'deterrence signal.' CENTCOM briefed congressional leaders on Iran's ballistic missile program progress.",
     tags: ["fact"],
@@ -198,7 +247,7 @@ const TIMELINE = [
     quotes: [],
   },
   {
-    date: "Feb 2025",
+    date: "Feb 2025", ts: "2025-02-18T00:00:00Z",
     title: "Iran announces new uranium enrichment milestone",
     body: "Iran's AEOI announced it had stockpiled enough 60%-enriched uranium that, if further enriched to 90%, could theoretically fuel one nuclear device. IAEA inspectors reported access restrictions at Fordow.",
     tags: ["fact","assumed"],
@@ -211,7 +260,7 @@ const TIMELINE = [
     ],
   },
   {
-    date: "Mar 2025",
+    date: "Mar 2025", ts: "2025-03-05T00:00:00Z",
     title: "US-Israel joint military exercise conducted near Iran's maritime boundary",
     body: "A large-scale US-Israel joint exercise was conducted in the Eastern Mediterranean and northern Red Sea, simulating long-range strike missions. Iran's military described it as 'provocative.'",
     tags: ["fact"],
@@ -222,7 +271,7 @@ const TIMELINE = [
     quotes: [],
   },
   {
-    date: "Mar 2025",
+    date: "Mar 2025", ts: "2025-03-12T00:00:00Z",
     title: "Market spike: YES probability surges +12pp following CENTCOM briefing leak",
     body: "An unverified leak from a congressional briefing suggested CENTCOM had presented an updated Iran strike plan to the National Security Council. Market traders reacted sharply, pushing YES probability up ~12 percentage points within hours before partial retracement.",
     tags: ["believed","disputed"],
@@ -235,7 +284,7 @@ const TIMELINE = [
     ],
   },
   {
-    date: "Mar 2025",
+    date: "Mar 2025", ts: "2025-03-18T00:00:00Z",
     title: "Iran test-fires long-range ballistic missiles in 'snap exercise'",
     body: "IRGC Aerospace Force conducted an unannounced ballistic missile drill, firing Shahab-3 and Sejjil missiles into the eastern deserts. Iran said the exercise was a 'routine defensive deterrent.' US and Israeli defense ministries condemned the test.",
     tags: ["fact"],
@@ -248,7 +297,7 @@ const TIMELINE = [
     ],
   },
   {
-    date: "Mar 2025",
+    date: "Mar 2025", ts: "2025-03-22T00:00:00Z",
     title: "Trump-Khamenei backchannel talks reported via Oman intermediary",
     body: "Multiple outlets reported Oman was facilitating indirect communications between the Trump administration and Iran's Supreme Leader office regarding the nuclear program. No formal talks confirmed. Iran denied direct contact.",
     tags: ["likely","assumed"],
@@ -259,7 +308,7 @@ const TIMELINE = [
     quotes: [],
   },
   {
-    date: "Mar 2025",
+    date: "Mar 2026", ts: "2026-03-26T00:00:00Z",
     title: "Current status: Elevated but unresolved",
     body: "As of late March 2025, the bet resolves YES if US forces enter Iranian territory (including airstrikes) before Dec 31, 2025. The market is currently pricing this at roughly 70¢, implying ~70% probability. Key unresolved factors: nuclear diplomacy timeline, Israeli pressure, CENTCOM readiness posture, and whether Iran crosses a military red line.",
     tags: ["believed"],
@@ -271,7 +320,13 @@ const TIMELINE = [
   },
 ];
 
-let currentFilter = 'all';
+function setZoom(z, btn) {
+  currentZoom = z;
+  document.querySelectorAll('.zoom-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('zoomDesc').textContent = ZOOM_META[z].label;
+  renderTimeline();
+}
 
 function setFilter(f, btn) {
   currentFilter = f;
@@ -280,43 +335,201 @@ function setFilter(f, btn) {
   renderTimeline();
 }
 
-function renderTimeline() {
-  const entries = TIMELINE.filter(e => {
-    if (currentFilter === 'all') return true;
-    if (currentFilter === 'major') return e.impact === 'high';
-    return e.category.includes(currentFilter);
-  });
+async function refreshTimeline() {
+  await fetchSignals();
+  renderTimeline();
+}
 
-  const tl = document.getElementById('timeline');
-  if (!entries.length) {
-    tl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">No events match this filter.</div>';
+async function fetchSignals() {
+  try {
+    const r = await fetch('/api/command/signals?hours=168&limit=500');
+    const d = await r.json();
+    _liveSignals = Array.isArray(d) ? d : (d.signals || []);
+  } catch(e) { _liveSignals = []; }
+}
+
+function renderTimeline() {
+  const meta = ZOOM_META[currentZoom];
+  const now  = new Date();
+  const cutoff = new Date(now - meta.hours * 3600 * 1000);
+  const tl   = document.getElementById('timeline');
+  const info = document.getElementById('zoomInfoBar');
+
+  // ── COMPACT view (all-time): one line per event ───────────────────────────
+  if (meta.compact) {
+    info.style.display = 'block';
+    info.textContent   = 'All-time view: collapsed to headline-only. Click "7 Days" or finer to expand.';
+
+    const entries = TIMELINE.filter(e => {
+      if (currentFilter === 'major') return e.impact === 'high';
+      if (currentFilter !== 'all')  return e.category.includes(currentFilter);
+      return true;
+    });
+    if (!entries.length) { tl.innerHTML = empty(); return; }
+
+    tl.innerHTML = '<div>' + entries.map(e => {
+      const tags = e.tags.map(t => `<span class="tag tag-${t}">${t}</span>`).join('');
+      const dotColor = e.dotClass === 'tl-dot-major' ? 'var(--red)' :
+                       e.dotClass === 'tl-dot-medium'  ? 'var(--yellow)' :
+                       e.dotClass === 'tl-dot-positive' ? 'var(--green)' : 'var(--border)';
+      return `<div class="tl-entry-compact">
+        <span class="tl-compact-date">${esc(e.date)}</span>
+        <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block;margin-top:3px"></span>
+        <span class="tl-compact-title">${esc(e.title)}</span>
+        <div class="tl-compact-tags">${tags}</div>
+      </div>`;
+    }).join('') + '</div>';
     return;
   }
 
-  tl.innerHTML = entries.map(e => {
-    const tags = e.tags.map(t => `<span class="tag tag-${t}">${t}</span>`).join('');
-    const impactClass = `impact-${e.impact}`;
-    const impactLabel = e.impact === 'high' ? 'HIGH IMPACT' : e.impact === 'medium' ? 'MED IMPACT' : 'LOW';
-    const quotes = e.quotes.map(q => `
-      <div class="quote-block">
-        <div class="quote-text">"${esc(q.text)}"</div>
-        <div class="quote-attr">— ${esc(q.attr)}</div>
-      </div>`).join('');
-    const oddsTag = e.odds_at_time != null ? `<span class="tl-odds">~${e.odds_at_time}¢ YES</span>` : '';
+  // ── DETAILED views (month / week / day / 6h / 1h) ────────────────────────
+  // Merge hardcoded events (filtered by cutoff + category) with live signals
+  const filteredEvents = TIMELINE.filter(e => {
+    const ets = e.ts ? new Date(e.ts) : new Date(0);
+    if (ets < cutoff) return false;
+    if (currentFilter === 'major') return e.impact === 'high';
+    if (currentFilter !== 'all')   return e.category.includes(currentFilter);
+    return true;
+  });
 
-    return `<div class="tl-entry" data-category="${e.category.join(',')}">
-      <div class="tl-dot ${e.dotClass}"></div>
-      <div class="tl-header">
-        <span class="tl-date">${esc(e.date)}</span>
-        ${tags}
-        <span class="impact ${impactClass}">${impactLabel}</span>
-        ${oddsTag}
-      </div>
-      <div class="tl-title">${esc(e.title)}</div>
-      <div class="tl-body">${esc(e.body)}</div>
-      ${quotes}
-    </div>`;
-  }).join('');
+  // Only include live signals if zoom ≤ week and category allows it
+  const sigCutoffHours = Math.min(meta.sigHours, 168);
+  const sigCutoff = new Date(now - sigCutoffHours * 3600 * 1000);
+  let filteredSigs = _liveSignals.filter(s => {
+    if (!s.timestamp) return false;
+    const sts = new Date(s.timestamp);
+    if (sts < sigCutoff) return false;
+    if (currentFilter === 'major') return (s.importance_score || 0) >= 75;
+    if (currentFilter === 'military') return ['pulse','beacon'].includes(s.source_app);
+    if (currentFilter === 'market')   return ['market','orderflow'].includes(s.source_app);
+    return currentFilter === 'all';
+  });
+
+  // Nothing to show
+  if (!filteredEvents.length && !filteredSigs.length) {
+    info.style.display = 'block';
+    info.textContent   = 'No events in this window. Zoom out or change filter.';
+    tl.innerHTML = empty();
+    return;
+  }
+
+  info.style.display = 'block';
+  info.textContent   = `${filteredEvents.length} historical event(s) + ${filteredSigs.length} live signal(s) in view`;
+
+  // ── For 24h / 6h / 1h: group signals by hour, show granular ticker ────────
+  if (['day','6h','1h'].includes(currentZoom)) {
+    // Build hour buckets
+    const buckets = {};   // "YYYY-MM-DD HH:00" → []
+    filteredSigs.forEach(s => {
+      const d = new Date(s.timestamp);
+      const key = d.toLocaleString('en-US', {month:'short',day:'numeric',hour:'2-digit',hour12:false}).replace(',','');
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push(s);
+    });
+    filteredEvents.forEach(e => {
+      const d = new Date(e.ts || 0);
+      const key = d.toLocaleString('en-US', {month:'short',day:'numeric',hour:'2-digit',hour12:false}).replace(',','');
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push({_isEvent: true, ...e});
+    });
+
+    // Sort bucket keys descending
+    const sortedKeys = Object.keys(buckets).sort((a,b) => new Date(b) - new Date(a));
+
+    let html = '';
+    sortedKeys.forEach(key => {
+      const items = buckets[key].sort((a,b) =>
+        new Date(b.timestamp || b.ts || 0) - new Date(a.timestamp || a.ts || 0));
+      html += `<div class="tl-hour-divider">⏱ ${key}</div>`;
+      items.forEach(item => {
+        if (item._isEvent) {
+          // Hardcoded event in granular view
+          const tags = item.tags.map(t => `<span class="tag tag-${t}">${t}</span>`).join('');
+          html += `<div class="tl-signal">
+            <div class="tl-signal-dot" style="background:var(--amber)"></div>
+            <div class="tl-signal-time">📅 ${esc(item.date)} — Historical Event</div>
+            <div class="tl-signal-head">${esc(item.title)}</div>
+            <div class="tl-signal-meta">${tags}</div>
+          </div>`;
+        } else {
+          // Live signal
+          const dir = item.signal_direction || 'neutral';
+          const dotColor = dir==='bullish' ? 'var(--green)' : dir==='bearish' ? 'var(--red)' : 'var(--border)';
+          const dirColor = dir==='bullish' ? '#22c55e'     : dir==='bearish' ? '#ef4444'    : '#64748b';
+          const srcIcon  = {pulse:'🕵️',beacon:'📡',market:'📊',orderflow:'📈',video:'📹'}[item.source_app] || '📌';
+          const t = new Date(item.timestamp);
+          const timeStr = t.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+          html += `<div class="tl-signal">
+            <div class="tl-signal-dot" style="background:${dotColor}"></div>
+            <div class="tl-signal-time">${timeStr} ${srcIcon} ${esc(item.source_app||'')}</div>
+            <div class="tl-signal-head" style="color:${dirColor}">${esc(item.headline||'')}</div>
+            <div class="tl-signal-meta">
+              <span>C:${item.confidence_score||0}</span>
+              <span>I:${item.importance_score||0}</span>
+              <span style="color:${dirColor}">${dir.toUpperCase()}</span>
+              ${item.probability_impact_estimate ? `<span>Impact: ${item.probability_impact_estimate>0?'+':''}${item.probability_impact_estimate}pp</span>` : ''}
+            </div>
+          </div>`;
+        }
+      });
+    });
+    tl.innerHTML = html || empty();
+    return;
+  }
+
+  // ── STANDARD view (month / week): normal timeline entries + signal rows ───
+  // Combine events and signals, sort by timestamp descending
+  const combined = [
+    ...filteredEvents.map(e => ({ _type:'event', _ts: new Date(e.ts||0), ...e })),
+    ...filteredSigs.map(s  => ({ _type:'signal', _ts: new Date(s.timestamp||0), ...s })),
+  ].sort((a,b) => b._ts - a._ts);
+
+  tl.innerHTML = combined.map(item => {
+    if (item._type === 'event') {
+      const tags = item.tags.map(t => `<span class="tag tag-${t}">${t}</span>`).join('');
+      const impCls = `impact-${item.impact}`;
+      const impLbl = item.impact==='high'?'HIGH IMPACT':item.impact==='medium'?'MED IMPACT':'LOW';
+      const quotes = (item.quotes||[]).map(q => `
+        <div class="quote-block">
+          <div class="quote-text">"${esc(q.text)}"</div>
+          <div class="quote-attr">— ${esc(q.attr)}</div>
+        </div>`).join('');
+      const oddsTag = item.odds_at_time!=null ? `<span class="tl-odds">~${item.odds_at_time}¢ YES</span>` : '';
+      return `<div class="tl-entry" data-category="${(item.category||[]).join(',')}">
+        <div class="tl-dot ${item.dotClass||'tl-dot-minor'}"></div>
+        <div class="tl-header">
+          <span class="tl-date">${esc(item.date)}</span>
+          ${tags}
+          <span class="impact ${impCls}">${impLbl}</span>
+          ${oddsTag}
+        </div>
+        <div class="tl-title">${esc(item.title)}</div>
+        <div class="tl-body">${esc(item.body)}</div>
+        ${quotes}
+      </div>`;
+    } else {
+      // Live signal row in standard view
+      const dir   = item.signal_direction || 'neutral';
+      const dotC  = dir==='bullish'?'tl-dot-positive':dir==='bearish'?'tl-dot-major':'tl-dot-minor';
+      const dirC  = dir==='bullish'?'var(--green)':dir==='bearish'?'var(--red)':'var(--muted)';
+      const srcIc = {pulse:'🕵️',beacon:'📡',market:'📊',orderflow:'📈',video:'📹'}[item.source_app]||'📌';
+      const tStr  = new Date(item._ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      return `<div class="tl-entry">
+        <div class="tl-dot ${dotC}"></div>
+        <div class="tl-header">
+          <span class="tl-date">${tStr}</span>
+          <span class="tag" style="background:rgba(100,116,139,.1);color:var(--muted);border:1px solid var(--border)">${srcIc} ${esc(item.source_app||'')}</span>
+          <span class="impact impact-${item.importance_score>=75?'high':item.importance_score>=50?'medium':'low'}">I:${item.importance_score||0}</span>
+        </div>
+        <div class="tl-title" style="color:${dirC}">${esc(item.headline||'')}</div>
+        ${item.raw_text ? `<div class="tl-body">${esc((item.raw_text||'').slice(0,160))}</div>` : ''}
+      </div>`;
+    }
+  }).join('') || empty();
+}
+
+function empty() {
+  return '<div style="color:var(--muted);text-align:center;padding:32px">No events in this window. Try zooming out or changing the filter.</div>';
 }
 
 async function loadSignals() {
@@ -344,26 +557,15 @@ async function loadSignals() {
         <span style="font-size:16px;flex-shrink:0;padding-top:2px">${icon}</span>
         <div style="flex:1">
           <div style="font-weight:700;color:${dc};margin-bottom:2px">${esc(s.headline||'')}</div>
-          <div style="color:var(--muted);font-size:11px;line-height:1.5">${esc((s.raw_text||'').slice(0,120))}</div>
-          <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <span style="font-size:9px;background:rgba(245,158,11,.1);color:var(--amber);padding:1px 6px;border-radius:3px">${esc(s.source_app||'')}</span>
-            <span style="font-size:9px;color:var(--muted)">${ts}</span>
-            <span style="font-size:9px;background:rgba(59,130,246,.1);color:var(--blue);padding:1px 5px;border-radius:3px">C:${cl}</span>
-            <span style="font-size:9px;background:rgba(249,115,22,.1);color:var(--orange);padding:1px 5px;border-radius:3px">I:${im}</span>
-            ${imp ? `<span style="font-size:9px;color:${imp>0?'var(--green)':'var(--red)'}">${imp>0?'+':''}${imp.toFixed(1)}pp</span>` : ''}
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-  } catch(e) {
-    document.getElementById('signalFeed').innerHTML = '<div style="color:var(--red);text-align:center;padding:20px">Error loading signals: ' + e.message + '</div>';
-  }
-}
-
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-renderTimeline();
-loadSignals();
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await fetchSignals();
+  renderTimeline();
+  // Auto-refresh signals every 60s
+  setInterval(async () => { await fetchSignals(); renderTimeline(); }, 60000);
+})();
 
 // ── Live viewer heartbeat ──────────────────────────────────────────────────
 (function() {
