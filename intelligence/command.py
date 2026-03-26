@@ -23,6 +23,18 @@ CONVERGENCE_THRESHOLD = 3    # signals from N different apps = convergence
 HIGH_IMPORTANCE_THRESHOLD = 75
 URGENT_IMPORTANCE_THRESHOLD = 85
 
+# ── Desk credibility weights ───────────────────────────────────────────────────
+# Pulse (X/Twitter) is the fastest and most direct — officials + analysts post
+# breaking developments in real time. Beacon (news) is second — credibility-
+# scored journalism from vetted sources. Market and OrderFlow reflect what
+# traders are doing, which lags real-world events.
+DESK_WEIGHTS = {
+    "pulse":     0.40,   # X/Twitter: highest — real-time official + analyst signal
+    "beacon":    0.35,   # News/GDELT: second — structured, credibility-scored journalism
+    "market":    0.15,   # Polymarket price/momentum: crowd-sourced, lags events
+    "orderflow": 0.10,   # Order book depth: positioning intent, slowest to update
+}
+
 
 def run_command_cycle() -> dict:
     """
@@ -63,9 +75,14 @@ def run_command_cycle() -> dict:
     bull_pct = len(bullish) / total
     bear_pct = len(bearish) / total
 
-    # Weighted directional score: sum of (decayed_confidence * importance)
-    bull_weight = sum(s.get("decayed_confidence", 0) * s.get("importance_score", 0) for s in bullish)
-    bear_weight = sum(s.get("decayed_confidence", 0) * s.get("importance_score", 0) for s in bearish)
+    # Weighted directional score: decayed_confidence × importance × desk_weight
+    # Pulse (40%) and Beacon (35%) outweigh Market (15%) and OrderFlow (10%)
+    def _signal_weight(s: dict) -> float:
+        desk_mult = DESK_WEIGHTS.get(s.get("source_app", ""), 0.10)
+        return s.get("decayed_confidence", 0) * s.get("importance_score", 0) * desk_mult
+
+    bull_weight = sum(_signal_weight(s) for s in bullish)
+    bear_weight = sum(_signal_weight(s) for s in bearish)
     total_weight = bull_weight + bear_weight + 1
 
     # 6. Compute house odds (blend market price with signal direction)

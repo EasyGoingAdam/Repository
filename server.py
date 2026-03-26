@@ -243,6 +243,22 @@ def get_weights():
         "total": round(sum(weights.values()), 4),
     }
 
+@app.get("/api/desk-weights")
+def get_desk_weights():
+    """Return the per-desk credibility weights used by Command aggregation."""
+    from intelligence.command import DESK_WEIGHTS
+    DESK_DESCRIPTIONS = {
+        "pulse":     "X/Twitter: highest — real-time official + analyst signal",
+        "beacon":    "News/GDELT: second — credibility-scored journalism",
+        "market":    "Polymarket price/momentum: crowd-sourced, lags events",
+        "orderflow": "Order book depth: positioning intent, slowest to update",
+    }
+    return {
+        "desk_weights": DESK_WEIGHTS,
+        "descriptions": DESK_DESCRIPTIONS,
+        "total": round(sum(DESK_WEIGHTS.values()), 4),
+    }
+
 @app.get("/api/user/position")
 def get_user_position():
     """

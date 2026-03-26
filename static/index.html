@@ -389,13 +389,16 @@
             <div class="cmd-reason" id="cmdReason">Aggregating intelligence from all desks...</div>
           </div>
 
-          <!-- Slide 2: Live algorithm weights -->
+          <!-- Slide 2: Desk weights + signal weights -->
           <div class="cmd-slide">
-            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Live Algorithm Weights</div>
-            <div id="weightBars" style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Intelligence Desk Weights</div>
+            <div id="deskWeightBars" style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px">
               <!-- filled by JS -->
             </div>
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">Weights are auto-refined as prediction history grows. Click <strong style="color:var(--text)">Update Algorithm</strong> below to recalculate now.</div>
+            <div style="font-size:10px;color:var(--muted);border-top:1px solid var(--border);padding-top:8px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">Market Signal Weights (within Market desk)</div>
+            <div id="weightBars" style="display:flex;flex-direction:column;gap:6px">
+              <!-- filled by JS -->
+            </div>
           </div>
 
           <!-- Slide 3: Your position -->
@@ -661,37 +664,37 @@
       </table>
 
       <div class="algo-section-title">Step 2 — Desk Signal Weights</div>
-      <p>Each desk has a <strong>base credibility weight</strong> that scales how much its signals influence the final estimate. These reflect the inherent reliability and latency of each data source:</p>
+      <p>Each desk has a <strong>credibility weight</strong> that scales how much its signals move the final estimate. <strong>Pulse and Beacon are weighted highest</strong> because they capture real-world events as they happen — Twitter posts from officials and journalists break news before markets price it in. Market and OrderFlow weights are lower because they reflect crowd positioning, which lags actual events.</p>
       <table class="algo-weight-table">
-        <thead><tr><th>Desk</th><th>Source</th><th>Base Weight</th><th>Visual</th></tr></thead>
+        <thead><tr><th>Desk</th><th>Source</th><th>Weight</th><th>Visual</th></tr></thead>
         <tbody>
           <tr>
-            <td>📊 <strong>Market</strong></td>
-            <td>Polymarket price, momentum, volume, trade flow</td>
-            <td>0.40 (40%)</td>
-            <td><span class="wt-bar" style="width:80px;background:var(--green)"></span></td>
-          </tr>
-          <tr>
-            <td>📈 <strong>OrderFlow</strong></td>
-            <td>Live bid/ask depth, proximity-weighted imbalance</td>
-            <td>0.30 (30%)</td>
-            <td><span class="wt-bar" style="width:60px;background:var(--yellow)"></span></td>
+            <td>🕵️ <strong>Pulse</strong></td>
+            <td>X/Twitter: real-time posts from officials, verified analysts, CENTCOM, State Dept</td>
+            <td><strong>0.40 (40%)</strong> — highest</td>
+            <td><span class="wt-bar" style="width:80px;background:var(--purple)"></span></td>
           </tr>
           <tr>
             <td>📡 <strong>Beacon</strong></td>
-            <td>GDELT news events, RSS feeds, credibility scoring</td>
-            <td>0.20 (20%)</td>
-            <td><span class="wt-bar" style="width:40px;background:var(--blue)"></span></td>
+            <td>GDELT news events, credibility-scored RSS feeds from Reuters, AP, BBC, etc.</td>
+            <td><strong>0.35 (35%)</strong> — second</td>
+            <td><span class="wt-bar" style="width:70px;background:var(--blue)"></span></td>
           </tr>
           <tr>
-            <td>🕵️ <strong>Pulse</strong></td>
-            <td>Twitter/X search + priority account timelines</td>
+            <td>📊 <strong>Market</strong></td>
+            <td>Polymarket price momentum, volume, trade flow — crowd consensus signal</td>
+            <td>0.15 (15%)</td>
+            <td><span class="wt-bar" style="width:30px;background:var(--green)"></span></td>
+          </tr>
+          <tr>
+            <td>📈 <strong>OrderFlow</strong></td>
+            <td>Live bid/ask depth, proximity-weighted imbalance — positioning intent</td>
             <td>0.10 (10%)</td>
-            <td><span class="wt-bar" style="width:20px;background:var(--purple)"></span></td>
+            <td><span class="wt-bar" style="width:20px;background:var(--yellow)"></span></td>
           </tr>
         </tbody>
       </table>
-      <p>Within each desk, individual signals are further weighted by their <strong>importance_score</strong>. Higher-importance signals from verified/official sources pull the estimate more strongly.</p>
+      <p>Within each desk, individual signals are further multiplied by their <strong>importance_score</strong> (0–100) and a <strong>time decay</strong> factor (half-life 12 hours) so fresh high-importance signals from credible sources dominate the estimate.</p>
 
       <div class="algo-section-title">Step 3 — Probability Aggregation Formula</div>
       <p>Starting from the raw Polymarket YES price as the anchor, the model computes a weighted adjustment:</p>
@@ -1503,10 +1506,40 @@ const WEIGHT_META = {
   trade_flow:         { label: 'Trade Flow',          color: '#ef4444' },
 };
 
+const DESK_META = {
+  pulse:     { label: '🕵️  Pulse (X/Twitter)', color: '#bc8cff' },
+  beacon:    { label: '📡  Beacon (News/GDELT)', color: '#58a6ff' },
+  market:    { label: '📊  Market (Price/Volume)', color: '#3fb950' },
+  orderflow: { label: '📈  OrderFlow (Order Book)', color: '#d29922' },
+};
+
 async function loadWeightSlide() {
   try {
-    const d = await fetch('/api/weights').then(r => r.json());
-    const weights = d.weights || {};
+    const [wd, dw] = await Promise.all([
+      fetch('/api/weights').then(r => r.json()),
+      fetch('/api/desk-weights').then(r => r.json()),
+    ]);
+
+    // Desk weights (top section)
+    const deskW = dw.desk_weights || {};
+    const deskContainer = document.getElementById('deskWeightBars');
+    const deskSorted = Object.entries(deskW).sort((a,b) => b[1] - a[1]);
+    const maxDesk = deskSorted[0]?.[1] || 1;
+    deskContainer.innerHTML = deskSorted.map(([k, v]) => {
+      const meta = DESK_META[k] || { label: k, color: '#8b949e' };
+      const pct = (v * 100).toFixed(0);
+      const barPct = Math.round(v / maxDesk * 100);
+      return `<div class="weight-row">
+        <div class="weight-name" style="width:190px;font-size:12px">${meta.label}</div>
+        <div class="weight-bar-track">
+          <div class="weight-bar-fill" style="width:${barPct}%;background:${meta.color}"></div>
+        </div>
+        <div class="weight-pct" style="font-size:13px;font-weight:700;color:${meta.color}">${pct}%</div>
+      </div>`;
+    }).join('');
+
+    // Market signal weights (bottom section)
+    const weights = wd.weights || {};
     const container = document.getElementById('weightBars');
     const sorted = Object.entries(weights).sort((a,b) => b[1] - a[1]);
     const maxW = sorted[0]?.[1] || 1;
