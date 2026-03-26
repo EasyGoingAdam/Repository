@@ -588,57 +588,6 @@
       </div>
     </div>
 
-    <!-- Performance -->
-    <div class="card">
-      <h2>Prediction Performance</h2>
-      <div class="perf-grid" id="perfGrid">
-        <div class="perf-metric"><div class="label">Total Stored</div><div class="big blue" id="perfTotal">—</div></div>
-        <div class="perf-metric"><div class="label">Pending</div><div class="big yellow" id="perfPending">—</div></div>
-        <div class="perf-metric"><div class="label">Accuracy</div><div class="big green" id="perfAcc">—</div></div>
-        <div class="perf-metric"><div class="label">Brier Score</div><div class="big" id="perfBrier">—</div></div>
-      </div>
-      <!-- Live prediction snapshot — shown even before resolutions -->
-      <div id="perfLiveBox" style="margin-top:14px;display:none">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Latest Prediction Snapshot</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-          <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
-            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Model Says</div>
-            <div style="font-size:22px;font-weight:700;color:var(--purple)" id="perfModelSays">—</div>
-          </div>
-          <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
-            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Market Price</div>
-            <div style="font-size:22px;font-weight:700;color:var(--blue)" id="perfMktPrice">—</div>
-          </div>
-          <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
-            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Model Edge</div>
-            <div style="font-size:22px;font-weight:700" id="perfEdge">—</div>
-          </div>
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5" id="perfReasoning"></div>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:10px" id="perfNote"></div>
-    </div>
-
-    <!-- Predictions History (full width) -->
-    <div class="card full-width">
-      <h2>Prediction Log</h2>
-      <div style="overflow-x:auto">
-        <table class="pred-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Market</th>
-              <th>Our Pred</th>
-              <th>Market Price</th>
-              <th>Confidence</th>
-              <th>Outcome</th>
-              <th>Score</th>
-            </tr>
-          </thead>
-          <tbody id="predBody"></tbody>
-        </table>
-      </div>
-    </div>
 
   </div>
 
@@ -1211,96 +1160,6 @@ async function loadPriceHistory() {
   } catch(e) { console.error('history', e); }
 }
 
-async function loadPredictions() {
-  try {
-    const d = await api('/api/predictions');
-    const preds = (d.predictions || []).reverse();
-    const tbody = document.getElementById('predBody');
-    if (!preds.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">No predictions stored yet. Click "Store Prediction" to begin.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = preds.map(p => {
-      const ts = new Date(p.timestamp).toLocaleString();
-      const outBadge = p.outcome
-        ? `<span class="badge badge-${p.outcome.toLowerCase()}">${p.outcome}</span>`
-        : `<span class="badge badge-pending">pending</span>`;
-      const score = p.score !== null && p.score !== undefined ? p.score.toFixed(4) : '—';
-      const scoreColor = p.score !== null && p.score !== undefined
-        ? (p.score < 0.1 ? 'green' : p.score > 0.3 ? 'red' : 'yellow') : '';
-      return `<tr>
-        <td style="color:var(--muted);white-space:nowrap">${ts}</td>
-        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.market_question}</td>
-        <td class="blue">${fmtPct(p.predicted_yes_prob)}</td>
-        <td>${fmtPct(p.yes_price_at_prediction)}</td>
-        <td style="color:var(--muted)">${fmtPct(p.confidence)}</td>
-        <td>${outBadge}</td>
-        <td class="${scoreColor}">${score}</td>
-      </tr>`;
-    }).join('');
-  } catch(e) { console.error('predictions', e); }
-}
-
-async function loadPerformance() {
-  try {
-    const [perf, preds] = await Promise.all([
-      api('/api/performance'),
-      api('/api/predictions'),
-    ]);
-
-    // Top-level counts
-    document.getElementById('perfTotal').textContent   = perf.total_predictions || 0;
-    document.getElementById('perfPending').textContent = perf.pending || 0;
-
-    // Accuracy / Brier — only meaningful once resolved
-    const accEl = document.getElementById('perfAcc');
-    const brierEl = document.getElementById('perfBrier');
-    if (perf.resolved > 0) {
-      accEl.textContent   = fmtPct(perf.accuracy);
-      accEl.style.color   = perf.accuracy >= 0.6 ? 'var(--green)' : perf.accuracy >= 0.4 ? 'var(--yellow)' : 'var(--red)';
-      brierEl.textContent = perf.avg_brier_score.toFixed(4);
-      brierEl.style.color = perf.avg_brier_score < 0.15 ? 'var(--green)' : perf.avg_brier_score < 0.25 ? 'var(--yellow)' : 'var(--red)';
-    } else {
-      accEl.textContent   = 'Pending';
-      accEl.style.color   = 'var(--muted)';
-      brierEl.textContent = 'Pending';
-      brierEl.style.color = 'var(--muted)';
-    }
-
-    // Live snapshot from most recent prediction
-    const allPreds = (preds.predictions || []).slice().reverse(); // newest first
-    const latest = allPreds[0];
-    const noteEl = document.getElementById('perfNote');
-    const liveBox = document.getElementById('perfLiveBox');
-
-    if (latest) {
-      liveBox.style.display = 'block';
-      const modelPct = (latest.predicted_yes_prob * 100).toFixed(1) + '%';
-      const mktPct   = (latest.yes_price_at_prediction * 100).toFixed(1) + '%';
-      const edge     = ((latest.predicted_yes_prob - latest.yes_price_at_prediction) * 100);
-      const edgeStr  = (edge >= 0 ? '+' : '') + edge.toFixed(1) + 'pp';
-
-      document.getElementById('perfModelSays').textContent = modelPct;
-      document.getElementById('perfMktPrice').textContent  = mktPct;
-
-      const edgeEl = document.getElementById('perfEdge');
-      edgeEl.textContent   = edgeStr;
-      edgeEl.style.color   = edge > 2 ? 'var(--green)' : edge < -2 ? 'var(--red)' : 'var(--muted)';
-
-      // Truncate reasoning
-      const reason = latest.reasoning || '';
-      const shortReason = reason.split('\n').filter(l => l.trim()).slice(0,3).join(' · ');
-      document.getElementById('perfReasoning').textContent = shortReason.slice(0, 200);
-
-      noteEl.textContent = perf.resolved === 0
-        ? `${perf.pending} prediction${perf.pending !== 1 ? 's' : ''} pending resolution. Accuracy and Brier score will populate once market resolves.`
-        : `${perf.resolved} resolved · ${perf.pending} pending`;
-    } else {
-      liveBox.style.display = 'none';
-      noteEl.textContent = 'No predictions stored yet. Click "Store Prediction" to begin tracking.';
-    }
-  } catch(e) { console.error('performance', e); }
-}
 
 async function storePrediction() {
   const btn = document.getElementById('btnPredict');
@@ -1310,8 +1169,6 @@ async function storePrediction() {
     const d = await api('/api/predict/iran', 'POST');
     btn.textContent = `✓ Stored (${fmtPct(d.predicted_yes_prob)})`;
     setTimeout(() => { btn.textContent = '📌 Store Prediction'; btn.disabled = false; }, 3000);
-    await loadPredictions();
-    await loadPerformance();
   } catch(e) {
     btn.textContent = '✗ Error';
     setTimeout(() => { btn.textContent = '📌 Store Prediction'; btn.disabled = false; }, 2000);
@@ -1322,8 +1179,6 @@ async function resolveAll() {
   try {
     const d = await api('/api/resolve', 'POST');
     alert(`Resolved ${d.resolved} prediction(s).`);
-    await loadPredictions();
-    await loadPerformance();
   } catch(e) { alert('Error: ' + e.message); }
 }
 
@@ -1662,8 +1517,6 @@ async function refreshAll() {
     loadAnalysis(),
     loadOrderBook(),
     loadPriceHistory(),
-    loadPredictions(),
-    loadPerformance(),
     loadOBHistory(),
     loadCommandIntel(),
     loadWeightSlide(),
