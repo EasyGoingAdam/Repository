@@ -103,8 +103,351 @@ def init_db():
             asks_json TEXT
         )
     """)
+    # ── Multi-market tables ────────────────────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS managed_watchlist (
+            market_id TEXT PRIMARY KEY,
+            question TEXT NOT NULL,
+            slug TEXT,
+            category TEXT,
+            tags TEXT,
+            volume REAL,
+            liquidity REAL,
+            end_date TEXT,
+            yes_token_id TEXT,
+            no_token_id TEXT,
+            added_at TEXT NOT NULL,
+            last_snapshot_at TEXT,
+            active INTEGER DEFAULT 1,
+            discovery_source TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS price_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            unix_ts REAL NOT NULL,
+            yes_price REAL NOT NULL,
+            no_price REAL,
+            volume REAL,
+            volume_24hr REAL,
+            liquidity REAL,
+            best_bid REAL,
+            best_ask REAL,
+            spread REAL,
+            imbalance REAL,
+            is_backfill INTEGER DEFAULT 0
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_price_snap_market_ts ON price_snapshots(market_id, unix_ts)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS volatility_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            unix_ts REAL NOT NULL,
+            window_minutes INTEGER NOT NULL,
+            mean_price REAL,
+            std_dev REAL,
+            bollinger_upper REAL,
+            bollinger_lower REAL,
+            z_score REAL,
+            current_price REAL,
+            price_range_high REAL,
+            price_range_low REAL,
+            mean_reversion_signal REAL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vol_market_ts ON volatility_metrics(market_id, unix_ts)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trading_signals (
+            id TEXT PRIMARY KEY,
+            market_id TEXT NOT NULL,
+            market_question TEXT,
+            timestamp TEXT NOT NULL,
+            unix_ts REAL NOT NULL,
+            signal_type TEXT NOT NULL,
+            strength REAL NOT NULL,
+            price_at_signal REAL NOT NULL,
+            reasoning TEXT,
+            volatility_z_score REAL,
+            mean_reversion_component REAL,
+            momentum_component REAL,
+            volume_component REAL,
+            prediction_component REAL,
+            price_after_1h REAL,
+            price_after_6h REAL,
+            price_after_24h REAL,
+            profit_loss REAL,
+            evaluated INTEGER DEFAULT 0
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tsig_market ON trading_signals(market_id, unix_ts)")
     conn.commit()
     conn.close()
+
+
+# ── Managed Watchlist CRUD ─────────────────────────────────────────────────
+
+def upsert_managed_watchlist(market_dict: dict):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT OR REPLACE INTO managed_watchlist
+        (market_id, question, slug, category, tags, volume, liquidity, end_date,
+         yes_token_id, no_token_id, added_at, active, discovery_source)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)
+    """, (
+        market_dict["market_id"], market_dict["question"], market_dict.get("slug"),
+        market_dict.get("category"), json.dumps(market_dict.get("tags", [])),
+        market_dict.get("volume"), market_dict.get("liquidity"), market_dict.get("end_date"),
+        market_dict.get("yes_token_id"), market_dict.get("no_token_id"),
+        market_dict.get("added_at", datetime.now(timezone.utc).isoformat()),
+        market_dict.get("discovery_source", "auto"),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_managed_watchlist() -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM managed_watchlist WHERE active = 1").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def deactivate_watchlist_entry(market_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE managed_watchlist SET active = 0 WHERE market_id = ?", (market_id,))
+    conn.commit()
+    conn.close()
+
+
+# ── Price Snapshots CRUD ───────────────────────────────────────────────────
+
+def store_price_snapshot(market_id: str, data: dict):
+    now = datetime.now(timezone.utc)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT INTO price_snapshots
+        (market_id, timestamp, unix_ts, yes_price, no_price, volume, volume_24hr,
+         liquidity, best_bid, best_ask, spread, imbalance, is_backfill)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        market_id, now.isoformat(), now.timestamp(),
+        data.get("yes_price"), data.get("no_price"),
+        data.get("volume"), data.get("volume_24hr"),
+        data.get("liquidity"), data.get("best_bid"), data.get("best_ask"),
+        data.get("spread"), data.get("imbalance"),
+        data.get("is_backfill", 0),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def store_price_snapshot_with_ts(market_id: str, data: dict, ts_iso: str, unix_ts: float):
+    """Store a price snapshot with explicit timestamp (for backfill)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT INTO price_snapshots
+        (market_id, timestamp, unix_ts, yes_price, no_price, volume, volume_24hr,
+         liquidity, best_bid, best_ask, spread, imbalance, is_backfill)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
+    """, (
+        market_id, ts_iso, unix_ts,
+        data.get("yes_price"), data.get("no_price"),
+        data.get("volume"), data.get("volume_24hr"),
+        data.get("liquidity"), data.get("best_bid"), data.get("best_ask"),
+        data.get("spread"), data.get("imbalance"),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_price_snapshots(market_id: str, hours: int = 24, limit: int = 2000) -> list[dict]:
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).timestamp()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT * FROM price_snapshots
+        WHERE market_id = ? AND unix_ts > ?
+        ORDER BY unix_ts ASC LIMIT ?
+    """, (market_id, since, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_latest_price_snapshot(market_id: str) -> Optional[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("""
+        SELECT * FROM price_snapshots
+        WHERE market_id = ? ORDER BY unix_ts DESC LIMIT 1
+    """, (market_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_all_latest_prices() -> list[dict]:
+    """Get the most recent price snapshot for each market."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT p.* FROM price_snapshots p
+        INNER JOIN (
+            SELECT market_id, MAX(unix_ts) as max_ts
+            FROM price_snapshots GROUP BY market_id
+        ) latest ON p.market_id = latest.market_id AND p.unix_ts = latest.max_ts
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_snapshot_count(market_id: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT COUNT(*) FROM price_snapshots WHERE market_id = ?", (market_id,)
+    ).fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+
+# ── Volatility Metrics CRUD ────────────────────────────────────────────────
+
+def store_volatility_metric(metric: dict):
+    now = datetime.now(timezone.utc)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT INTO volatility_metrics
+        (market_id, timestamp, unix_ts, window_minutes, mean_price, std_dev,
+         bollinger_upper, bollinger_lower, z_score, current_price,
+         price_range_high, price_range_low, mean_reversion_signal)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        metric["market_id"], now.isoformat(), now.timestamp(),
+        metric["window_minutes"], metric.get("mean_price"), metric.get("std_dev"),
+        metric.get("bollinger_upper"), metric.get("bollinger_lower"),
+        metric.get("z_score"), metric.get("current_price"),
+        metric.get("price_range_high"), metric.get("price_range_low"),
+        metric.get("mean_reversion_signal"),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_latest_volatility(market_id: str, window_minutes: int = None) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    if window_minutes:
+        rows = conn.execute("""
+            SELECT * FROM volatility_metrics
+            WHERE market_id = ? AND window_minutes = ?
+            ORDER BY unix_ts DESC LIMIT 1
+        """, (market_id, window_minutes)).fetchall()
+    else:
+        # Get latest for each window size
+        rows = conn.execute("""
+            SELECT v.* FROM volatility_metrics v
+            INNER JOIN (
+                SELECT market_id, window_minutes, MAX(unix_ts) as max_ts
+                FROM volatility_metrics WHERE market_id = ?
+                GROUP BY market_id, window_minutes
+            ) latest ON v.market_id = latest.market_id
+                AND v.window_minutes = latest.window_minutes
+                AND v.unix_ts = latest.max_ts
+        """, (market_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_all_latest_volatility() -> list[dict]:
+    """Get latest volatility metric (6h window) for all markets."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT v.* FROM volatility_metrics v
+        INNER JOIN (
+            SELECT market_id, MAX(unix_ts) as max_ts
+            FROM volatility_metrics WHERE window_minutes = 360
+            GROUP BY market_id
+        ) latest ON v.market_id = latest.market_id AND v.unix_ts = latest.max_ts
+        WHERE v.window_minutes = 360
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── Trading Signals CRUD ───────────────────────────────────────────────────
+
+def store_trading_signal(sig: dict):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT OR IGNORE INTO trading_signals
+        (id, market_id, market_question, timestamp, unix_ts, signal_type, strength,
+         price_at_signal, reasoning, volatility_z_score, mean_reversion_component,
+         momentum_component, volume_component, prediction_component)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        sig["id"], sig["market_id"], sig.get("market_question"),
+        sig["timestamp"], sig["unix_ts"],
+        sig["signal_type"], sig["strength"], sig["price_at_signal"],
+        sig.get("reasoning"), sig.get("volatility_z_score"),
+        sig.get("mean_reversion_component"), sig.get("momentum_component"),
+        sig.get("volume_component"), sig.get("prediction_component"),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_active_trading_signals(hours: int = 24) -> list[dict]:
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).timestamp()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT * FROM trading_signals
+        WHERE unix_ts > ? ORDER BY unix_ts DESC
+    """, (since,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_unevaluated_signals(min_age_hours: float = 1.0) -> list[dict]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=min_age_hours)).timestamp()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT * FROM trading_signals
+        WHERE evaluated = 0 AND unix_ts < ?
+        ORDER BY unix_ts ASC
+    """, (cutoff,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_trading_signal_evaluation(signal_id: str, updates: dict):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        UPDATE trading_signals SET
+            price_after_1h = ?, price_after_6h = ?, price_after_24h = ?,
+            profit_loss = ?, evaluated = 1
+        WHERE id = ?
+    """, (
+        updates.get("price_after_1h"), updates.get("price_after_6h"),
+        updates.get("price_after_24h"), updates.get("profit_loss"), signal_id,
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_evaluated_trading_signals() -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT * FROM trading_signals WHERE evaluated = 1 ORDER BY unix_ts DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def store_orderbook_snapshot(depth: dict, yes_price: float = None):

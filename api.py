@@ -25,11 +25,36 @@ def _get(url: str, params: dict = None, retries: int = 3) -> Union[dict, list]:
             time.sleep(2 ** attempt)
 
 
-def search_markets(query: str, limit: int = 20) -> list[Market]:
+def search_markets(query: str, limit: int = 20, open_only: bool = False) -> list[Market]:
     """Search markets by keyword."""
-    data = _get(f"{GAMMA_BASE}/markets", params={"q": query, "limit": limit, "active": "true"})
+    params = {"q": query, "limit": limit, "active": "true"}
+    if open_only:
+        params["closed"] = "false"
+    data = _get(f"{GAMMA_BASE}/markets", params=params)
     markets = []
     for m in (data if isinstance(data, list) else data.get("markets", [])):
+        markets.append(_parse_market(m))
+    return markets
+
+
+def get_events(limit: int = 20, active: bool = True, closed: bool = False,
+               order: str = "volume24hr", ascending: bool = False) -> list[dict]:
+    """Fetch events with their sub-markets."""
+    params = {
+        "limit": limit,
+        "active": str(active).lower(),
+        "closed": str(closed).lower(),
+        "order": order,
+        "ascending": str(ascending).lower(),
+    }
+    data = _get(f"{GAMMA_BASE}/events", params=params)
+    return data if isinstance(data, list) else []
+
+
+def get_event_markets(event: dict) -> list[Market]:
+    """Parse markets from an event response."""
+    markets = []
+    for m in event.get("markets", []):
         markets.append(_parse_market(m))
     return markets
 

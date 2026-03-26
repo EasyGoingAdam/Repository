@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Multi-Market Dashboard — Polymarket Analyzer</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+      --accent: #1f6feb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; font-size: 14px; }
+
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 18px; font-weight: 600; }
+    header h1 span { color: var(--blue); }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .last-updated { color: var(--muted); font-size: 12px; }
+    .nav-links a { color: var(--blue); text-decoration: none; font-size: 13px; }
+    .nav-links a:hover { text-decoration: underline; }
+
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .green { color: var(--green); }
+    .red { color: var(--red); }
+    .yellow { color: var(--yellow); }
+    .blue { color: var(--blue); }
+
+    .section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
+    .section-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .section-header h2 { font-size: 15px; font-weight: 600; }
+    .section-body { padding: 0; }
+
+    /* Market table */
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 10px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 1px solid var(--border); }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover { background: rgba(88,166,255,0.04); }
+    tr.buy-signal { border-left: 3px solid var(--green); }
+    tr.sell-signal { border-left: 3px solid var(--red); }
+
+    .price-cell { font-weight: 600; font-size: 15px; }
+    .z-score { font-weight: 600; }
+    .z-buy { color: var(--green); }
+    .z-sell { color: var(--red); }
+    .z-neutral { color: var(--muted); }
+
+    .signal-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .signal-buy { background: rgba(63,185,80,0.15); color: var(--green); }
+    .signal-sell { background: rgba(248,81,73,0.15); color: var(--red); }
+
+    .bollinger-bar { width: 120px; height: 16px; background: var(--border); border-radius: 3px; position: relative; display: inline-block; }
+    .bollinger-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--blue); position: absolute; top: 4px; }
+
+    /* Opportunities panel */
+    .opp-card { padding: 14px 20px; border-bottom: 1px solid var(--border); }
+    .opp-card:last-child { border-bottom: none; }
+    .opp-direction { font-weight: 700; font-size: 13px; }
+    .opp-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+    .btn { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    .btn:hover { opacity: 0.85; }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+
+    .loading { color: var(--muted); padding: 40px; text-align: center; }
+
+    /* Sortable headers */
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--blue); }
+    th .sort-arrow { margin-left: 4px; font-size: 10px; }
+
+    .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+    @media (max-width: 1000px) { .two-col { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="live-dot"></span> Multi-Market <span>Research Dashboard</span></h1>
+    <div class="header-right">
+      <div class="nav-links">
+        <a href="/">Iran Desk</a> &nbsp;|&nbsp;
+        <a href="/command">Command</a> &nbsp;|&nbsp;
+        <a href="/markets">Markets</a>
+      </div>
+      <span class="last-updated" id="lastUpdated">Loading...</span>
+      <button class="btn btn-sm" onclick="refreshData()">Refresh</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Stats bar -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Markets Watched</div>
+        <div class="value blue" id="statMarkets">—</div>
+        <div class="sub">US politics & Israel</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Active Signals</div>
+        <div class="value yellow" id="statSignals">—</div>
+        <div class="sub" id="statSignalsSub">buy/sell alerts</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Signal Win Rate</div>
+        <div class="value green" id="statWinRate">—</div>
+        <div class="sub" id="statWinRateSub">from evaluated signals</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Opportunities</div>
+        <div class="value purple" id="statOpps">—</div>
+        <div class="sub">|z-score| &gt; 1.5</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <!-- Market table -->
+      <div class="section">
+        <div class="section-header">
+          <h2>Watched Markets</h2>
+          <button class="btn btn-sm" onclick="runDiscovery()">Re-Discover</button>
+        </div>
+        <div class="section-body">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable" onclick="sortTable('question')">Market <span class="sort-arrow"></span></th>
+                <th class="sortable" onclick="sortTable('yes_price')">YES Price <span class="sort-arrow"></span></th>
+                <th class="sortable" onclick="sortTable('volume')">Volume <span class="sort-arrow"></span></th>
+                <th class="sortable" onclick="sortTable('z_score')">Z-Score <span class="sort-arrow"></span></th>
+                <th>Bollinger</th>
+                <th>Signal</th>
+              </tr>
+            </thead>
+            <tbody id="marketTable">
+              <tr><td colspan="6" class="loading">Loading markets...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Opportunities panel -->
+      <div>
+        <div class="section">
+          <div class="section-header">
+            <h2>Opportunities</h2>
+          </div>
+          <div class="section-body" id="oppsPanel">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+
+        <div class="section" style="margin-top: 20px;">
+          <div class="section-header">
+            <h2>Recent Signals</h2>
+          </div>
+          <div class="section-body" id="signalsPanel">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let dashboardData = null;
+let sortKey = 'volume';
+let sortAsc = false;
+
+async function fetchDashboard() {
+  try {
+    const resp = await fetch('/api/dashboard');
+    dashboardData = await resp.json();
+    render();
+    document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    console.error('Dashboard fetch error:', e);
+  }
+}
+
+function render() {
+  if (!dashboardData) return;
+  const d = dashboardData;
+
+  document.getElementById('statMarkets').textContent = d.total_markets || 0;
+  document.getElementById('statSignals').textContent = d.active_signals_count || 0;
+
+  const perf = d.signal_performance || {};
+  const wr = perf.win_rate || 0;
+  document.getElementById('statWinRate').textContent = (wr * 100).toFixed(0) + '%';
+  document.getElementById('statWinRateSub').textContent = `${perf.total_signals || 0} total signals`;
+
+  document.getElementById('statOpps').textContent = (d.opportunities || []).length;
+
+  renderTable(d.markets || []);
+  renderOpps(d.opportunities || []);
+  renderSignals(d.markets || []);
+}
+
+function renderTable(markets) {
+  // Sort
+  markets.sort((a, b) => {
+    let va = a[sortKey] ?? 0;
+    let vb = b[sortKey] ?? 0;
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ? 1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('marketTable');
+  if (!markets.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="loading">No markets found. Click "Re-Discover" to search.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = markets.map(m => {
+    const price = m.yes_price != null ? (m.yes_price * 100).toFixed(1) + '\u00a2' : '—';
+    const vol = m.volume ? '$' + (m.volume / 1000).toFixed(0) + 'k' : '—';
+    const z = m.z_score != null ? m.z_score.toFixed(2) : '—';
+    const zClass = m.z_score > 1.5 ? 'z-sell' : m.z_score < -1.5 ? 'z-buy' : 'z-neutral';
+    const rowClass = m.active_signal === 'buy' ? 'buy-signal' : m.active_signal === 'sell' ? 'sell-signal' : '';
+
+    // Bollinger position
+    let bollingerHtml = '—';
+    if (m.bollinger_upper && m.bollinger_lower && m.yes_price != null) {
+      const range = m.bollinger_upper - m.bollinger_lower;
+      const pos = range > 0 ? ((m.yes_price - m.bollinger_lower) / range) * 100 : 50;
+      const clampedPos = Math.max(2, Math.min(98, pos));
+      bollingerHtml = `<div class="bollinger-bar"><div class="bollinger-dot" style="left:${clampedPos}%"></div></div>`;
+    }
+
+    let signalHtml = '';
+    if (m.active_signal) {
+      const cls = m.active_signal === 'buy' ? 'signal-buy' : 'signal-sell';
+      signalHtml = `<span class="signal-badge ${cls}">${m.active_signal} ${(m.signal_strength * 100).toFixed(0)}%</span>`;
+    }
+
+    return `<tr class="${rowClass}">
+      <td style="max-width:300px">${m.question || '—'}</td>
+      <td class="price-cell">${price}</td>
+      <td>${vol}</td>
+      <td class="z-score ${zClass}">${z}</td>
+      <td>${bollingerHtml}</td>
+      <td>${signalHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderOpps(opps) {
+  const panel = document.getElementById('oppsPanel');
+  if (!opps.length) {
+    panel.innerHTML = '<div class="opp-card" style="color:var(--muted)">No significant opportunities detected.</div>';
+    return;
+  }
+  panel.innerHTML = opps.map(o => {
+    const dirClass = o.direction === 'BUY' ? 'green' : 'red';
+    return `<div class="opp-card">
+      <div class="opp-direction ${dirClass}">${o.direction} — ${(o.question || '').substring(0, 50)}</div>
+      <div class="opp-meta">
+        Price: ${(o.current_price * 100).toFixed(1)}\u00a2 | Mean: ${(o.mean_price * 100).toFixed(1)}\u00a2 | Z: ${o.z_score.toFixed(2)} | Strength: ${(o.strength * 100).toFixed(0)}%
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderSignals(markets) {
+  const panel = document.getElementById('signalsPanel');
+  const withSignals = markets.filter(m => m.active_signal);
+  if (!withSignals.length) {
+    panel.innerHTML = '<div class="opp-card" style="color:var(--muted)">No active trading signals.</div>';
+    return;
+  }
+  panel.innerHTML = withSignals.slice(0, 8).map(m => {
+    const cls = m.active_signal === 'buy' ? 'green' : 'red';
+    return `<div class="opp-card">
+      <div class="${cls}" style="font-weight:600">${m.active_signal.toUpperCase()} ${(m.signal_strength * 100).toFixed(0)}%</div>
+      <div class="opp-meta">${(m.question || '').substring(0, 55)} @ ${(m.yes_price * 100).toFixed(1)}\u00a2</div>
+    </div>`;
+  }).join('');
+}
+
+function sortTable(key) {
+  if (sortKey === key) {
+    sortAsc = !sortAsc;
+  } else {
+    sortKey = key;
+    sortAsc = key === 'question';
+  }
+  render();
+}
+
+async function runDiscovery() {
+  try {
+    await fetch('/api/discovery/refresh');
+    await fetchDashboard();
+  } catch (e) { console.error(e); }
+}
+
+function refreshData() {
+  fetchDashboard();
+}
+
+// Initial load + auto-refresh every 30s
+fetchDashboard();
+setInterval(fetchDashboard, 30000);
+</script>
+</body>
+</html>

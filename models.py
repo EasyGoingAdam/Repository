@@ -62,6 +62,47 @@ class Prediction:
 
 
 @dataclass
+class VolatilityMetric:
+    market_id: str
+    window_minutes: int
+    mean_price: float
+    std_dev: float
+    bollinger_upper: float
+    bollinger_lower: float
+    z_score: float
+    current_price: float
+    mean_reversion_signal: float
+    price_range_high: float
+    price_range_low: float
+    timestamp: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class TradingSignal:
+    id: str
+    market_id: str
+    market_question: str
+    signal_type: str          # buy / sell / hold
+    strength: float
+    price_at_signal: float
+    reasoning: str
+    volatility_z_score: float
+    mean_reversion_component: float
+    momentum_component: float
+    volume_component: float
+    prediction_component: float
+    timestamp: str = ""
+    profit_loss: Optional[float] = None
+    evaluated: bool = False
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class PerformanceReport:
     total_predictions: int
     resolved: int

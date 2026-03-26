@@ -15,13 +15,21 @@ Commands:
   watchlist                  List your watched markets
   demo                       Run demo with sample market data (no API key needed)
 
+  --- Multi-Market Research ---
+  discover                   Auto-find ~20 US politics/Israel markets
+  collect                    Snapshot prices for all watched markets
+  volatility [market_id]     Show volatility metrics
+  opportunities              Show mean reversion buy/sell opportunities
+  signals                    Show active trading signals
+  signal-report              Show trading signal performance
+
 Usage:
-  python main.py search "iran boots"
-  python main.py watch "iran boots"
-  python main.py predict "iran boots"
-  python main.py resolve
-  python main.py report
-  python main.py refine
+  python main.py discover
+  python main.py collect
+  python main.py volatility
+  python main.py opportunities
+  python main.py signals
+  python main.py signal-report
 """
 import sys
 import json
@@ -30,6 +38,7 @@ import api as polyapi
 import tracker
 import analyzer as analyzermod
 from models import Prediction
+from intelligence.signals import init_db
 
 
 def _separator(char="─", width=65):
@@ -331,6 +340,165 @@ def cmd_demo():
     print(f"\nRun  python main.py refine  after accumulating real predictions to tune the model.")
 
 
+def cmd_discover():
+    """Auto-discover US politics and Israel markets."""
+    import discovery
+    init_db()
+    print("\nDiscovering US politics & Israel markets on Polymarket...")
+    _separator()
+    result = discovery.refresh_watchlist()
+    print(f"\nResult: {result['added']} added, {result.get('removed', 0)} removed, {result['total']} total")
+    _separator()
+
+    from intelligence.signals import get_managed_watchlist
+    watchlist = get_managed_watchlist()
+    print(f"\nActive watchlist ({len(watchlist)} markets):")
+    for i, w in enumerate(watchlist, 1):
+        vol_str = f"${w.get('volume', 0):,.0f}" if w.get('volume') else "N/A"
+        print(f"  {i:2d}. {w['question'][:65]}")
+        print(f"      Volume: {vol_str}  |  ID: {w['market_id']}")
+
+    # Backfill historical data
+    import collector
+    print("\nBackfilling historical price data...")
+    bf = collector.backfill_all_markets()
+    print(f"  Backfilled {bf['markets_filled']} markets with {bf['total_points']} data points")
+
+
+def cmd_collect():
+    """Run one cycle of price collection."""
+    import collector
+    init_db()
+    print("\nCollecting price snapshots for all watched markets...")
+    _separator()
+    result = collector.collect_all_snapshots()
+    print(f"  Collected: {result['collected']}")
+    print(f"  Failed:    {result['failed']}")
+    print(f"  Total:     {result['total']}")
+
+
+def cmd_volatility(args: list):
+    """Show volatility metrics for one or all markets."""
+    import volatility as volmod
+    init_db()
+
+    if args:
+        market_id = args[0]
+        print(f"\nVolatility for market {market_id}")
+        _separator()
+        summary = volmod.get_market_volatility_summary(market_id)
+        if not summary:
+            print("No volatility data yet. Run 'collect' first to gather price data.")
+            return
+        print(f"  Current price: {summary['current_price']:.4f}" if summary.get('current_price') else "  Current price: N/A")
+        for window, data in summary.get("windows", {}).items():
+            print(f"\n  {window}-minute window:")
+            print(f"    Mean: {data['mean_price']:.4f}  |  Std: {data['std_dev']:.4f}")
+            print(f"    Bollinger: [{data['bollinger_lower']:.4f} — {data['bollinger_upper']:.4f}]")
+            print(f"    Z-Score: {data['z_score']:+.3f}  |  Signal: {data['signal_label']}")
+    else:
+        print("\nVolatility Summary — All Watched Markets")
+        _separator()
+        from intelligence.signals import get_all_latest_volatility, get_managed_watchlist
+        all_vol = get_all_latest_volatility()
+        market_names = {w["market_id"]: w["question"] for w in get_managed_watchlist()}
+
+        if not all_vol:
+            print("No volatility data yet. Run 'collect' first to gather price data.")
+            return
+
+        # Sort by absolute z-score
+        all_vol.sort(key=lambda v: abs(v.get("z_score", 0)), reverse=True)
+        for v in all_vol:
+            name = market_names.get(v["market_id"], v["market_id"])[:55]
+            z = v.get("z_score", 0)
+            price = v.get("current_price", 0)
+            std = v.get("std_dev", 0)
+            label = _z_label(z)
+            print(f"  {name}")
+            print(f"    Price: {price:.4f}  |  Z: {z:+.2f} {label}  |  StdDev: {std:.4f}")
+
+
+def cmd_opportunities():
+    """Show mean reversion buy/sell opportunities."""
+    import volatility as volmod
+    init_db()
+    print("\nMean Reversion Opportunities (|z-score| > 1.5)")
+    _separator()
+    opps = volmod.detect_opportunities(threshold_z=1.5)
+    if not opps:
+        print("  No significant opportunities detected.")
+        print("  Markets are trading near fair value, or not enough data yet.")
+        return
+    for o in opps:
+        direction = o["direction"]
+        marker = "🟢" if direction == "BUY" else "🔴"
+        print(f"  {marker} {direction} — {o['question'][:55]}")
+        print(f"    Price: {o['current_price']:.4f}  |  Mean: {o['mean_price']:.4f}  |  Z: {o['z_score']:+.2f}")
+        print(f"    Bollinger: [{o['bollinger_lower']:.4f} — {o['bollinger_upper']:.4f}]")
+        print()
+
+
+def cmd_signals():
+    """Show active trading signals."""
+    from intelligence.signals import get_active_trading_signals
+    init_db()
+    print("\nActive Trading Signals (last 24h)")
+    _separator()
+    signals = get_active_trading_signals(hours=24)
+    if not signals:
+        print("  No active signals.")
+        return
+    for s in signals:
+        stype = s["signal_type"].upper()
+        marker = "🟢 BUY " if stype == "BUY" else "🔴 SELL"
+        print(f"  {marker} (strength: {s['strength']:.2f}) — {s.get('market_question', s['market_id'])[:55]}")
+        print(f"    Price: {s['price_at_signal']:.4f}  |  {s['reasoning']}")
+        print(f"    Time: {s['timestamp'][:19]}")
+        if s.get("evaluated") and s.get("profit_loss") is not None:
+            pl = s["profit_loss"]
+            print(f"    P&L: {pl:+.4f} {'✓' if pl > 0 else '✗'}")
+        print()
+
+
+def cmd_signal_report():
+    """Show trading signal performance report."""
+    import signal_generator as siggen
+    init_db()
+    print("\nTrading Signal Performance Report")
+    _separator()
+    report = siggen.get_signal_performance_report()
+    print(f"  Total signals:   {report['total_signals']}")
+    print(f"  Evaluated:       {report['evaluated']}")
+    print(f"  Win rate:        {report['win_rate']:.1%}")
+    print(f"  Avg profit:      {report['avg_profit']:+.6f}")
+    print(f"  Total profit:    {report['total_profit']:+.6f}")
+
+    if report.get("by_type"):
+        print("\n  By signal type:")
+        for stype, data in report["by_type"].items():
+            if data["count"] > 0:
+                print(f"    {stype.upper()}: {data['count']} signals, "
+                      f"win rate {data['win_rate']:.1%}, avg P&L {data['avg_pl']:+.6f}")
+
+    if report.get("by_market"):
+        print("\n  By market (top 5):")
+        sorted_markets = sorted(report["by_market"].items(),
+                                key=lambda x: x[1]["count"], reverse=True)[:5]
+        for mid, data in sorted_markets:
+            name = data.get("question", mid)[:45]
+            print(f"    {name}")
+            print(f"      Signals: {data['count']}  |  Win: {data['win_rate']:.0%}  |  P&L: {data['total_pl']:+.4f}")
+
+
+def _z_label(z):
+    if z > 2.0: return "(STRONG SELL)"
+    elif z > 1.5: return "(SELL)"
+    elif z < -2.0: return "(STRONG BUY)"
+    elif z < -1.5: return "(BUY)"
+    else: return ""
+
+
 def _find_market(query: str):
     """Find market by slug, ID, or keyword search."""
     # Try slug
@@ -368,6 +536,15 @@ COMMANDS = {
     "watchlist": lambda args: cmd_watchlist(),
     "demo": lambda args: cmd_demo(),
     "help": lambda args: print_help(),
+    # Multi-market research
+    "discover": lambda args: cmd_discover(),
+    "collect": lambda args: cmd_collect(),
+    "volatility": cmd_volatility,
+    "vol": cmd_volatility,  # alias
+    "opportunities": lambda args: cmd_opportunities(),
+    "opps": lambda args: cmd_opportunities(),  # alias
+    "signals": lambda args: cmd_signals(),
+    "signal-report": lambda args: cmd_signal_report(),
 }
 
 if __name__ == "__main__":

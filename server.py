@@ -246,69 +246,80 @@ def get_weights():
 @app.get("/api/user/position")
 def get_user_position():
     """
-    Fetch @easygoinga's open position on the Iran boots-on-ground market.
-    Requires POLYMARKET_WALLET env var set to their 0x wallet address.
+    Fetch @easygoinga's Polymarket portfolio — all Iran-related positions.
+    Wallet is hardcoded; override with POLYMARKET_WALLET env var if needed.
     """
     import requests as req
-    wallet = os.environ.get("POLYMARKET_WALLET", "").strip()
-    if not wallet:
-        return {
-            "found": False,
-            "error": "Wallet not configured. Set POLYMARKET_WALLET env var to your 0x Polygon address.",
-        }
-    market = polyapi.find_iran_boots_market()
-    if not market:
-        return {"found": False, "error": "Market not found"}
+    from datetime import datetime, timezone as _tz
+
+    WALLET = os.environ.get("POLYMARKET_WALLET", "0xC3907f00Ba3fD35ef96c3b9AFa1483B644af2a1F").strip()
+    IRAN_KEYWORDS = ["iran", "irgc", "tehran", "persian", "hormuz", "fordow", "khamenei"]
+
     try:
-        # Polymarket data API — positions endpoint
         r = req.get(
             "https://data-api.polymarket.com/positions",
-            params={"user": wallet, "sizeThreshold": "0"},
-            timeout=12,
+            params={"user": WALLET, "sizeThreshold": "0"},
+            timeout=15,
         )
         if r.status_code != 200:
-            return {"found": False, "error": f"Polymarket API returned {r.status_code}"}
-        positions = r.json()
-        if not isinstance(positions, list):
-            return {"found": False, "error": "Unexpected response format"}
+            return {"found": False, "error": f"Polymarket API {r.status_code}"}
+        all_pos = r.json()
+        if not isinstance(all_pos, list):
+            return {"found": False, "error": "Unexpected response"}
 
-        # Find position matching this market's condition IDs or token IDs
-        token_ids = set(market.clob_token_ids or [])
-        match = None
-        for pos in positions:
-            cid = str(pos.get("conditionId", "") or pos.get("asset", "") or "")
-            if cid in token_ids or (market.id and market.id in cid):
-                match = pos
-                break
-            # Also check by market question keyword
-            q = (pos.get("market", {}) or {}).get("question", "").lower()
-            if "iran" in q and ("boot" in q or "ground" in q or "troops" in q):
-                match = pos
-                break
+        # Filter to Iran-related positions with meaningful size
+        iran_pos = []
+        for p in all_pos:
+            title = (p.get("title") or "").lower()
+            if any(kw in title for kw in IRAN_KEYWORDS) and float(p.get("size", 0)) >= 1.0:
+                iran_pos.append(p)
 
-        if not match:
-            return {"found": False, "fetched_at": __import__('datetime').datetime.utcnow().isoformat()}
+        # Sort by |cashPnl| descending — most impactful first
+        iran_pos.sort(key=lambda p: abs(float(p.get("cashPnl", 0))), reverse=True)
 
-        cur_price = market.yes_price
-        yes_shares = float(match.get("size", 0) or 0)
-        avg_price  = float(match.get("avgPrice", match.get("averagePrice", 0)) or 0)
-        outcome    = (match.get("outcome", "") or "").upper()
-        cost       = yes_shares * avg_price
-        pnl        = yes_shares * ((cur_price if outcome == "YES" else (1 - cur_price)) - avg_price)
+        # Build portfolio summary
+        total_invested  = sum(float(p.get("initialValue", 0) or 0) for p in iran_pos)
+        total_cur_val   = sum(float(p.get("currentValue", 0) or 0) for p in iran_pos)
+        total_cash_pnl  = sum(float(p.get("cashPnl", 0) or 0) for p in iran_pos)
+        total_realized  = sum(float(p.get("realizedPnl", 0) or 0) for p in iran_pos)
+        total_positions = len(iran_pos)
+        winning = sum(1 for p in iran_pos if float(p.get("cashPnl", 0)) > 0)
+        losing  = sum(1 for p in iran_pos if float(p.get("cashPnl", 0)) < 0)
+
+        # Top positions (up to 8)
+        top = []
+        for p in iran_pos[:8]:
+            size    = float(p.get("size", 0))
+            avg     = float(p.get("avgPrice", 0) or 0)
+            cur     = float(p.get("curPrice", 0) or 0)
+            pnl     = float(p.get("cashPnl", 0) or 0)
+            outcome = (p.get("outcome") or "YES").upper()
+            top.append({
+                "title":     p.get("title", ""),
+                "outcome":   outcome,
+                "shares":    round(size, 2),
+                "avg_price": round(avg, 4),
+                "cur_price": round(cur, 4),
+                "cash_pnl":  round(pnl, 2),
+                "redeemable": bool(p.get("redeemable")),
+                "end_date":  p.get("endDate", ""),
+            })
 
         return {
-            "found": True,
-            "position": {
-                "yes_shares":         yes_shares if outcome in ("YES", "") else 0,
-                "no_shares":          yes_shares if outcome == "NO" else 0,
-                "outcome":            outcome,
-                "avg_price_yes":      avg_price if outcome in ("YES", "") else None,
-                "avg_price_no":       avg_price if outcome == "NO" else None,
-                "current_yes_price":  cur_price,
-                "unrealized_pnl":     round(pnl, 4),
-                "total_cost":         round(cost, 4),
+            "found":           True,
+            "wallet":          WALLET[:6] + "..." + WALLET[-4:],
+            "summary": {
+                "total_positions":  total_positions,
+                "total_invested":   round(total_invested, 2),
+                "current_value":    round(total_cur_val, 2),
+                "unrealized_pnl":   round(total_cash_pnl, 2),
+                "realized_pnl":     round(total_realized, 2),
+                "total_pnl":        round(total_cash_pnl + total_realized, 2),
+                "winning":          winning,
+                "losing":           losing,
             },
-            "fetched_at": __import__('datetime').datetime.utcnow().isoformat(),
+            "top_positions":   top,
+            "fetched_at":      datetime.now(_tz.utc).isoformat(),
         }
     except Exception as e:
         return {"found": False, "error": str(e)}
