@@ -1404,17 +1404,20 @@ async function loadCommandIntel() {
       fetch('/api/command/status').then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
 
-    const marketPrice = state?.market_odds ?? analysis?.signals?.market_price ?? null;
-    const modelEst    = analysis?.prediction?.predicted_yes_prob ?? state?.house_odds ?? null;
+    // state.market_odds / state.house_odds are already percentage (×100) from server.
+    // analysis.signals.market_price and analysis.prediction.predicted_yes_prob are 0-1.
+    const mktPct  = state?.market_odds != null
+      ? state.market_odds
+      : (analysis?.signals?.market_price != null ? analysis.signals.market_price * 100 : null);
+    const estPct  = analysis?.prediction?.predicted_yes_prob != null
+      ? analysis.prediction.predicted_yes_prob * 100
+      : (state?.house_odds ?? null);
     const confidence  = analysis?.prediction?.confidence ?? null;
     const alertLevel  = state?.alert_level ?? 'NO_ACTION';
     const reason      = state?.reason_summary ?? analysis?.prediction?.reasoning ?? '';
     const topSignals  = state?.top_signals ?? [];
     const obBiasRaw   = state?.orderbook_bias ?? 'neutral';
     const conv        = state?.convergence ?? false;
-
-    const estPct  = modelEst != null ? modelEst * 100 : null;
-    const mktPct  = marketPrice != null ? marketPrice * 100 : null;
     const edge    = estPct != null && mktPct != null ? estPct - mktPct : null;
     const confVal = confidence != null ? confidence * 100 : null;
 
