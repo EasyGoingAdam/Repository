@@ -198,6 +198,53 @@ def init_db():
             last_sms_at TEXT
         )
     """)
+    # ── Tournament tables ──────────────────────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tournament_markets (
+            market_id TEXT PRIMARY KEY,
+            question TEXT NOT NULL,
+            slug TEXT,
+            yes_price_at_selection REAL,
+            volume REAL,
+            liquidity REAL,
+            end_date TEXT,
+            yes_token_id TEXT,
+            selected_at TEXT,
+            outcome TEXT,
+            final_price REAL,
+            resolved INTEGER DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tournament_bets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            engine_name TEXT NOT NULL,
+            market_id TEXT NOT NULL,
+            market_question TEXT,
+            side TEXT NOT NULL,
+            amount REAL NOT NULL,
+            entry_price REAL NOT NULL,
+            shares REAL NOT NULL,
+            timestamp TEXT NOT NULL,
+            outcome TEXT,
+            exit_price REAL,
+            profit_loss REAL,
+            resolved INTEGER DEFAULT 0
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tb_engine ON tournament_bets(engine_name)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tournament_engines (
+            engine_name TEXT PRIMARY KEY,
+            strategy_summary TEXT,
+            starting_balance REAL DEFAULT 1000,
+            current_balance REAL DEFAULT 1000,
+            total_bets INTEGER DEFAULT 0,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            roi REAL DEFAULT 0
+        )
+    """)
     conn.commit()
     conn.close()
 

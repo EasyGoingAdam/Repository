@@ -981,14 +981,15 @@ class SubscribeRequest(BaseModel):
     phone: str
 
 
-def _send_sms(to: str, body: str) -> bool:
-    """Send SMS via Twilio. Returns True on success."""
+def _send_sms(to: str, body: str) -> dict:
+    """Send SMS via Twilio. Returns dict with ok bool + debug info."""
     sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
     token = os.environ.get("TWILIO_AUTH_TOKEN", "")
     from_ = os.environ.get("TWILIO_FROM_NUMBER", "")
     if not sid or not token or not from_:
-        print(f"[SMS] Twilio not configured — would send to {to}: {body[:60]}")
-        return False
+        msg = f"Twilio not configured — sid={bool(sid)} token={bool(token)} from={bool(from_)}"
+        print(f"[SMS] {msg}")
+        return {"ok": False, "error": msg}
     try:
         import requests as req
         r = req.post(
@@ -999,13 +1000,14 @@ def _send_sms(to: str, body: str) -> bool:
         )
         if r.status_code in (200, 201):
             print(f"[SMS] Sent to {to[:6]}***")
-            return True
+            return {"ok": True, "status": r.status_code}
         else:
-            print(f"[SMS] Twilio error {r.status_code}: {r.text[:200]}")
-            return False
+            err = r.text[:300]
+            print(f"[SMS] Twilio error {r.status_code}: {err}")
+            return {"ok": False, "status": r.status_code, "error": err}
     except Exception as e:
         print(f"[SMS] Exception: {e}")
-        return False
+        return {"ok": False, "error": str(e)}
 
 
 def send_alert_sms(alert_level: str, headline: str, odds=None):
@@ -1039,8 +1041,8 @@ def send_alert_sms(alert_level: str, headline: str, odds=None):
                     continue
             except Exception:
                 pass
-        ok = _send_sms(sub["phone"], body)
-        if ok:
+        result = _send_sms(sub["phone"], body)
+        if result.get("ok"):
             update_last_sms(sub["phone"])
 
 
@@ -1072,20 +1074,33 @@ def api_subscribers():
 @app.post("/api/sms/test")
 def api_sms_test():
     """Admin: fire a test SMS to all subscribers (bypasses cooldown check via direct _send_sms)."""
-    from datetime import datetime as _dt3, timezone as _tz3
     subs = get_active_subscribers()
     sent = 0
+    errors = []
     body = (
         "EasyGoingA's News: 🔔 TEST\n\n"
         "First Strike SMS alerts are now active. "
         "You'll receive URGENT and IMPORTANT signals here.\n\n"
         "Reply STOP to unsubscribe"
     )
+    # Debug: include env var presence
+    twilio_debug = {
+        "sid_set": bool(os.environ.get("TWILIO_ACCOUNT_SID")),
+        "token_set": bool(os.environ.get("TWILIO_AUTH_TOKEN")),
+        "from_set": bool(os.environ.get("TWILIO_FROM_NUMBER")),
+        "from_number": os.environ.get("TWILIO_FROM_NUMBER", "NOT SET"),
+    }
     for sub in subs:
-        if _send_sms(sub["phone"], body):
+        result = _send_sms(sub["phone"], body)
+        if result.get("ok"):
             update_last_sms(sub["phone"])
             sent += 1
-    return {"triggered": True, "sent": sent, "recipient_count": len(subs)}
+        else:
+            errors.append({"phone": sub["phone"][:4] + "****", "error": result.get("error", "unknown")})
+    return {
+        "triggered": True, "sent": sent, "recipient_count": len(subs),
+        "twilio": twilio_debug, "errors": errors
+    }
 
 
 @app.post("/api/sms/send-news")
@@ -1128,6 +1143,45 @@ def api_viewers():
     now = time.time()
     active = sum(1 for v in _viewer_sessions.values() if now - v <= _VIEWER_TIMEOUT)
     return {"viewers": active}
+
+
+# ── Tournament API ────────────────────────────────────────────────────────────
+
+@app.get("/api/tournament/run")
+def api_tournament_run():
+    from engines.tournament import run_tournament
+    result = run_tournament()
+    return result
+
+
+@app.get("/api/tournament/leaderboard")
+def api_tournament_leaderboard():
+    from engines.tournament import get_leaderboard
+    return {"leaderboard": get_leaderboard()}
+
+
+@app.get("/api/tournament/resolve")
+def api_tournament_resolve():
+    from engines.tournament import resolve_tournament
+    return resolve_tournament()
+
+
+@app.get("/api/tournament/engine/{name}")
+def api_tournament_engine(name: str):
+    from engines.tournament import get_engine_detail
+    return get_engine_detail(name)
+
+
+@app.get("/api/tournament/markets")
+def api_tournament_markets():
+    from engines.markets import get_tournament_markets
+    return {"markets": get_tournament_markets()}
+
+
+@app.get("/api/tournament/summary")
+def api_tournament_summary():
+    from engines.tournament import get_tournament_summary
+    return get_tournament_summary()
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
@@ -1175,9 +1229,82 @@ def historian_desk():
     with open(Path(__file__).parent / "static" / "desk-historian.html") as f:
         return f.read()
 
+@app.get("/video", response_class=HTMLResponse)
+def video_desk():
+    with open(Path(__file__).parent / "static" / "desk-video.html") as f:
+        return f.read()
+
+
+@app.get("/api/video/streams")
+def api_video_streams():
+    """
+    Search YouTube Data API v3 for live streams related to Iran/military news.
+    Falls back to empty list if YOUTUBE_API_KEY is not set.
+    """
+    import requests as _req
+    key = os.environ.get("YOUTUBE_API_KEY", "")
+    if not key:
+        return {"live_count": 0, "streams": [], "no_api_key": True,
+                "message": "Set YOUTUBE_API_KEY in Railway env vars to enable live stream discovery"}
+
+    queries = [
+        "Iran military news live",
+        "Iran US war live stream",
+        "Middle East breaking news live",
+        "Iran boots on ground live",
+    ]
+    seen_ids = set()
+    streams = []
+
+    for q in queries:
+        try:
+            r = _req.get(
+                "https://www.googleapis.com/youtube/v3/search",
+                params={
+                    "part": "snippet",
+                    "q": q,
+                    "type": "video",
+                    "eventType": "live",
+                    "maxResults": 5,
+                    "order": "viewCount",
+                    "relevanceLanguage": "en",
+                    "key": key,
+                },
+                timeout=8,
+            )
+            if r.status_code != 200:
+                continue
+            items = r.json().get("items", [])
+            for item in items:
+                vid_id = item.get("id", {}).get("videoId", "")
+                if not vid_id or vid_id in seen_ids:
+                    continue
+                seen_ids.add(vid_id)
+                snip = item.get("snippet", {})
+                thumb = (snip.get("thumbnails", {}).get("medium", {}).get("url", "")
+                         or snip.get("thumbnails", {}).get("default", {}).get("url", ""))
+                streams.append({
+                    "video_id": vid_id,
+                    "title": snip.get("title", ""),
+                    "channel": snip.get("channelTitle", ""),
+                    "thumbnail": thumb,
+                    "published": snip.get("publishedAt", ""),
+                    "viewers": None,
+                })
+        except Exception:
+            continue
+
+    return {"live_count": len(streams), "streams": streams[:12], "no_api_key": False}
+
 @app.get("/markets", response_class=HTMLResponse)
 def multi_market_dashboard():
     with open(Path(__file__).parent / "static" / "multi-market.html") as f:
+        return f.read()
+
+
+@app.get("/tournament", response_class=HTMLResponse)
+def tournament_dashboard():
+    with open(Path(__file__).parent / "static" / "tournament.html") as f:
         return f.read()
 
 
