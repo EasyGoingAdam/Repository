@@ -400,11 +400,16 @@
 
           <!-- Slide 3: Your position -->
           <div class="cmd-slide">
-            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Your Position — <span style="color:var(--purple)">@easygoinga</span></div>
-            <div id="positionRows">
-              <div style="color:var(--muted);font-size:12px;padding:12px 0">Connect your Polymarket wallet to see live position data.</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Iran Portfolio — <span style="color:var(--purple)">@easygoinga</span></div>
+              <div style="font-size:11px;color:var(--muted)" id="posLastUpdate"></div>
             </div>
-            <div style="font-size:11px;color:var(--muted)" id="posLastUpdate"></div>
+            <!-- Summary row -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px" id="posSummary"></div>
+            <!-- Top positions table -->
+            <div style="max-height:120px;overflow-y:auto" id="positionRows">
+              <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading position data...</div>
+            </div>
           </div>
 
         </div><!-- /track -->
@@ -1435,47 +1440,67 @@ async function loadWeightSlide() {
 
 // ── Position slide ────────────────────────────────────────────────────────────
 async function loadPositionSlide() {
+  const rowsEl   = document.getElementById('positionRows');
+  const summEl   = document.getElementById('posSummary');
+  const luEl     = document.getElementById('posLastUpdate');
   try {
     const d = await fetch('/api/user/position').then(r => r.json());
-    const rows = document.getElementById('positionRows');
-    const lu = document.getElementById('posLastUpdate');
-    if (d.error) {
-      rows.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">${d.error}</div>`;
-      return;
-    }
     if (!d.found) {
-      rows.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">No open position found on this market.</div>`;
+      rowsEl.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">${d.error || 'No Iran positions found.'}</div>`;
       return;
     }
-    const p = d.position;
-    const yesShares = p.yes_shares ?? 0;
-    const noShares  = p.no_shares  ?? 0;
-    const avgYes    = p.avg_price_yes ?? null;
-    const avgNo     = p.avg_price_no  ?? null;
-    const curPrice  = p.current_yes_price ?? null;
-    const pnl       = p.unrealized_pnl ?? null;
-    const cost      = p.total_cost ?? null;
+    const s = d.summary;
 
-    const items = [
-      ['YES Shares Held',  yesShares  > 0 ? yesShares.toFixed(2)  : '—', yesShares > 0 ? 'var(--green)' : null],
-      ['NO Shares Held',   noShares   > 0 ? noShares.toFixed(2)   : '—', noShares  > 0 ? 'var(--red)'   : null],
-      ['Avg Buy Price (YES)', avgYes ? (avgYes * 100).toFixed(2) + '¢' : '—', null],
-      ['Current Price',    curPrice ? (curPrice * 100).toFixed(2) + '¢' : '—', 'var(--blue)'],
-      ['Unrealized P&L',   pnl != null ? (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2) : '—',
-                           pnl != null ? (pnl >= 0 ? 'var(--green)' : 'var(--red)') : null],
-      ['Total Cost Basis', cost != null ? '$' + cost.toFixed(2) : '—', null],
+    // Summary tiles
+    const tiles = [
+      { label:'Positions', val: s.total_positions, color: 'var(--text)' },
+      { label:'Cur. Value', val: '$'+s.current_value.toLocaleString('en',{maximumFractionDigits:0}), color: 'var(--blue)' },
+      { label:'Unrealized P&L', val: (s.unrealized_pnl>=0?'+':'')+' $'+Math.abs(s.unrealized_pnl).toLocaleString('en',{maximumFractionDigits:0}), color: s.unrealized_pnl>=0?'var(--green)':'var(--red)' },
+      { label:'Win/Loss', val: s.winning+'W / '+s.losing+'L', color: s.winning>s.losing?'var(--green)':s.winning<s.losing?'var(--red)':'var(--muted)' },
     ];
+    summEl.innerHTML = tiles.map(t => `
+      <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;text-align:center">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:3px">${t.label}</div>
+        <div style="font-size:15px;font-weight:700;font-family:monospace;color:${t.color}">${t.val}</div>
+      </div>`).join('');
 
-    rows.innerHTML = items.map(([label, val, color]) =>
-      `<div class="pos-metric">
-        <span class="pos-metric-label">${label}</span>
-        <span class="pos-metric-value" style="${color ? 'color:'+color : ''}">${val}</span>
-      </div>`
-    ).join('');
-    if (d.fetched_at) lu.textContent = 'Updated ' + new Date(d.fetched_at).toLocaleTimeString();
+    // Positions table
+    const tops = d.top_positions || [];
+    rowsEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr style="color:var(--muted);border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:3px 6px;font-weight:500">Market</th>
+            <th style="text-align:center;padding:3px 6px;font-weight:500">Side</th>
+            <th style="text-align:right;padding:3px 6px;font-weight:500">Shares</th>
+            <th style="text-align:right;padding:3px 6px;font-weight:500">Avg</th>
+            <th style="text-align:right;padding:3px 6px;font-weight:500">Now</th>
+            <th style="text-align:right;padding:3px 6px;font-weight:500">P&L</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tops.map(p => {
+            const pnlColor = p.cash_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+            const pnlStr = (p.cash_pnl >= 0 ? '+$' : '-$') + Math.abs(p.cash_pnl).toFixed(0);
+            // Shorten title
+            const title = p.title.length > 38 ? p.title.slice(0,36)+'…' : p.title;
+            const sideColor = p.outcome === 'YES' ? 'var(--green)' : 'var(--red)';
+            const expired = p.cur_price === 0 && !p.redeemable;
+            return `<tr style="border-bottom:1px solid #1c2128${expired?' opacity:.5':''}">
+              <td style="padding:4px 6px;color:var(--text)">${title}</td>
+              <td style="padding:4px 6px;text-align:center;color:${sideColor};font-weight:700">${p.outcome}</td>
+              <td style="padding:4px 6px;text-align:right;font-family:monospace">${p.shares.toLocaleString('en',{maximumFractionDigits:0})}</td>
+              <td style="padding:4px 6px;text-align:right;font-family:monospace;color:var(--muted)">${(p.avg_price*100).toFixed(1)}¢</td>
+              <td style="padding:4px 6px;text-align:right;font-family:monospace">${p.cur_price > 0 ? (p.cur_price*100).toFixed(1)+'¢' : (p.redeemable ? '✓ win' : '✗ exp')}</td>
+              <td style="padding:4px 6px;text-align:right;font-family:monospace;color:${pnlColor};font-weight:700">${pnlStr}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+
+    if (d.fetched_at) luEl.textContent = new Date(d.fetched_at).toLocaleTimeString();
   } catch(e) {
-    document.getElementById('positionRows').innerHTML =
-      `<div style="color:var(--muted);font-size:12px;padding:8px 0">Position data unavailable.</div>`;
+    rowsEl.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">Position data unavailable.</div>`;
   }
 }
 
