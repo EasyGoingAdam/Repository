@@ -1,7 +1,9 @@
 """
-First Strike Beacon — News + Official Signals Module
-Sources: GDELT, RSS feeds (Reuters, AP, BBC, Al Monitor), free news APIs
+First Strike Beacon — Global News Intelligence Module
+Sources: GDELT, RSS feeds (Reuters, AP, BBC, Al Monitor, Al Jazeera, Haaretz,
+Times of Israel, IRNA, FARS, Yedioth, NHK, France24, DW, TASS, Xinhua, etc.)
 No paid API key required — uses GDELT and public RSS.
+Supports multi-language news with automatic translation via free APIs.
 """
 import os
 import re
@@ -13,55 +15,206 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 from .signals import Signal, store_signal, MARKET_SLUG
 
-# RSS feeds — all free, no auth needed
-RSS_FEEDS = {
+# ── RSS Feeds — English ──────────────────────────────────────────────────────
+
+RSS_FEEDS_EN = {
+    # Wire services
     "Reuters World": "https://feeds.reuters.com/reuters/worldNews",
     "AP Top News": "https://feeds.apnews.com/rss/apf-topnews",
     "BBC World": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    # Middle East / defense
     "Al Monitor": "https://www.al-monitor.com/rss",
     "Defense One": "https://www.defenseone.com/rss/all/",
     "Breaking Defense": "https://breakingdefense.com/feed/",
+    "Times of Israel": "https://www.timesofisrael.com/feed/",
+    "Middle East Eye": "https://www.middleeasteye.net/rss",
+    "The National (UAE)": "https://www.thenationalnews.com/rss",
+    "Jerusalem Post": "https://www.jpost.com/rss/rssfeedsheadlines.aspx",
+    # US politics / policy
+    "Politico": "https://rss.politico.com/politics-news.xml",
+    "The Hill": "https://thehill.com/feed/",
+    "NPR Politics": "https://feeds.npr.org/1014/rss.xml",
+    # OSINT / military
+    "War on the Rocks": "https://warontherocks.com/feed/",
+    "The War Zone": "https://www.thedrive.com/the-war-zone/feed",
 }
 
-# GDELT free API endpoint
+# ── RSS Feeds — Non-English (require translation) ────────────────────────────
+
+RSS_FEEDS_INTL = {
+    # Arabic
+    "Al Jazeera Arabic": {
+        "url": "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9",
+        "lang": "ar",
+    },
+    # Hebrew
+    "Ynet (Hebrew)": {
+        "url": "https://www.ynet.co.il/Integration/StoryRss2.xml",
+        "lang": "he",
+    },
+    "Haaretz (Hebrew)": {
+        "url": "https://www.haaretz.co.il/cmlink/1.1617539",
+        "lang": "he",
+    },
+    # Persian / Farsi
+    "IRNA (Farsi)": {
+        "url": "https://www.irna.ir/rss",
+        "lang": "fa",
+    },
+    # French
+    "France24 Moyen-Orient": {
+        "url": "https://www.france24.com/fr/moyen-orient/rss",
+        "lang": "fr",
+    },
+    # German
+    "DW Nahost": {
+        "url": "https://rss.dw.com/xml/rss-de-nahost",
+        "lang": "de",
+    },
+    # Russian
+    "RT Russian": {
+        "url": "https://russian.rt.com/rss",
+        "lang": "ru",
+    },
+    # Turkish
+    "TRT Haber": {
+        "url": "https://www.trthaber.com/xml_mobile.php?ession=18",
+        "lang": "tr",
+    },
+    # Chinese
+    "Xinhua Int'l": {
+        "url": "http://www.news.cn/world/rss.xml",
+        "lang": "zh",
+    },
+    # Japanese
+    "NHK World": {
+        "url": "https://www3.nhk.or.jp/rss/news/cat6.xml",
+        "lang": "ja",
+    },
+}
+
+# ── GDELT queries (multiple keyword sets for broader coverage) ────────────────
+
 GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+GDELT_QUERIES = [
+    "iran military troops deployment",
+    "israel gaza ceasefire hamas",
+    "iran nuclear enrichment iaea",
+    "us iran sanctions pentagon",
+    "hezbollah israel lebanon",
+    "iran strait hormuz navy",
+    "netanyahu iran strike",
+]
+
+# ── Keywords ──────────────────────────────────────────────────────────────────
 
 IRAN_KEYWORDS = [
     "iran", "tehran", "irgc", "iranian", "persian gulf",
-    "strait of hormuz", "nuclear deal", "jcpoa",
+    "strait of hormuz", "nuclear deal", "jcpoa", "khamenei",
+    "raisi", "pezeshkian", "quds force", "natanz", "fordow",
+    "bushehr", "arak", "parchin",
+]
+
+ISRAEL_KEYWORDS = [
+    "israel", "israeli", "idf", "netanyahu", "tel aviv",
+    "jerusalem", "gaza", "hamas", "hezbollah", "west bank",
+    "knesset", "mossad", "shin bet", "iron dome", "kibbutz",
+    "golan", "rafah", "jenin", "nablus",
 ]
 
 MILITARY_KEYWORDS = [
     "troops", "military", "soldiers", "deploy", "invasion", "strike",
     "ground forces", "special forces", "war", "combat", "boots",
-    "pentagon", "centcom", "armed forces", "airstrikes",
+    "pentagon", "centcom", "armed forces", "airstrikes", "missile",
+    "drone", "carrier", "naval", "submarine", "f-35", "b-52",
+    "bunker buster", "sortie", "battalion", "brigade", "division",
 ]
+
+US_POLICY_KEYWORDS = [
+    "white house", "state department", "congress", "senate",
+    "sanctions", "executive order", "tariff", "diplomatic",
+    "ambassador", "envoy", "ceasefire", "peace deal",
+    "negotiation", "summit", "bilateral",
+]
+
+ALL_RELEVANT_KEYWORDS = IRAN_KEYWORDS + ISRAEL_KEYWORDS + MILITARY_KEYWORDS + US_POLICY_KEYWORDS
 
 OFFICIAL_SOURCES = {
     "Defense One": 85, "Breaking Defense": 82, "Reuters World": 90,
     "AP Top News": 90, "BBC World": 85, "Al Monitor": 78,
     "White House": 95, "DoD": 95, "State Department": 92,
+    "Times of Israel": 80, "Jerusalem Post": 78,
+    "Middle East Eye": 75, "The National (UAE)": 72,
+    "Haaretz (Hebrew)": 82, "Ynet (Hebrew)": 78,
+    "IRNA (Farsi)": 65, "Al Jazeera Arabic": 75,
+    "France24 Moyen-Orient": 80, "DW Nahost": 78,
+    "Politico": 82, "The Hill": 78, "NPR Politics": 85,
+    "War on the Rocks": 80, "The War Zone": 78,
+    "RT Russian": 55, "Xinhua Int'l": 55,
+    "NHK World": 78, "TRT Haber": 65,
 }
 
 ESCALATION_PHRASES = [
     "sends troops", "deploys forces", "military action", "ground invasion",
     "boots on the ground", "special operations", "armed conflict",
     "declares war", "attacks iran", "enters iran", "crosses border",
-    "imminent attack", "strike planned",
+    "imminent attack", "strike planned", "mobilization", "war footing",
+    "retaliatory strike", "preemptive", "nuclear threat", "red line",
+    "ultimatum", "military buildup", "carrier group", "battle stations",
 ]
 
 DEESCALATION_PHRASES = [
     "diplomatic solution", "sanctions lifted", "peace talks", "ceasefire",
     "nuclear agreement", "no military", "withdraw", "de-escalate",
+    "truce", "stand down", "pullback", "cooling tensions",
+    "back-channel", "mediation", "humanitarian corridor",
 ]
 
 
-def _score_article(title: str, body: str, source: str) -> dict:
+# ── Translation ──────────────────────────────────────────────────────────────
+
+def translate_text(text, source_lang, target_lang="en"):
+    """
+    Translate text using free translation APIs.
+    Tries MyMemory API (free, no key needed, 5000 chars/day).
+    Falls back to returning original text with lang tag if translation fails.
+    """
+    if not text or source_lang == "en":
+        return text
+
+    text_trimmed = text[:500]  # limit to avoid API issues
+
+    # MyMemory free translation API
+    try:
+        langpair = f"{source_lang}|{target_lang}"
+        r = requests.get(
+            "https://api.mymemory.translated.net/get",
+            params={"q": text_trimmed, "langpair": langpair},
+            timeout=8,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            translated = data.get("responseData", {}).get("translatedText", "")
+            if translated and translated != text_trimmed:
+                return translated
+    except Exception:
+        pass
+
+    # Fallback: return original with language tag
+    return f"[{source_lang}] {text_trimmed}"
+
+
+# ── Scoring ──────────────────────────────────────────────────────────────────
+
+def _score_article(title, body, source):
     text = (title + " " + body).lower()
     esc = sum(1 for p in ESCALATION_PHRASES if p in text)
     deesc = sum(1 for p in DEESCALATION_PHRASES if p in text)
     iran_hits = sum(1 for k in IRAN_KEYWORDS if k in text)
+    israel_hits = sum(1 for k in ISRAEL_KEYWORDS if k in text)
     mil_hits = sum(1 for k in MILITARY_KEYWORDS if k in text)
+    policy_hits = sum(1 for k in US_POLICY_KEYWORDS if k in text)
 
     credibility = OFFICIAL_SOURCES.get(source, 60)
 
@@ -78,53 +231,71 @@ def _score_article(title: str, body: str, source: str) -> dict:
         confidence = max(30, credibility - 15)
         impact = 0.0
 
-    importance = min(100, credibility + (esc + deesc) * 7 + iran_hits * 3 + mil_hits * 3)
+    importance = min(100, credibility + (esc + deesc) * 7
+                     + iran_hits * 3 + israel_hits * 3
+                     + mil_hits * 3 + policy_hits * 2)
 
     return {
         "direction": direction,
         "confidence": int(confidence),
         "importance": int(importance),
         "impact": impact,
-        "esc": esc,
-        "deesc": deesc,
-        "iran_hits": iran_hits,
-        "mil_hits": mil_hits,
+        "esc": esc, "deesc": deesc,
+        "iran_hits": iran_hits, "israel_hits": israel_hits,
+        "mil_hits": mil_hits, "policy_hits": policy_hits,
     }
 
 
-def _is_iran_relevant(title: str, body: str) -> bool:
+def _is_relevant(title, body):
+    """Check if article is relevant to Iran/Israel/US military/policy."""
     text = (title + " " + body).lower()
-    has_iran = any(k in text for k in IRAN_KEYWORDS)
-    has_military = any(k in text for k in MILITARY_KEYWORDS)
-    return has_iran and has_military
+    has_region = any(k in text for k in IRAN_KEYWORDS + ISRAEL_KEYWORDS)
+    has_topic = any(k in text for k in MILITARY_KEYWORDS + US_POLICY_KEYWORDS)
+    # Accept if it mentions region + topic, or has 3+ keyword hits total
+    if has_region and has_topic:
+        return True
+    total_hits = sum(1 for k in ALL_RELEVANT_KEYWORDS if k in text)
+    return total_hits >= 3
 
 
-def fetch_rss(feed_name: str, url: str) -> list[dict]:
+# ── RSS Fetching ─────────────────────────────────────────────────────────────
+
+def fetch_rss(feed_name, url):
     try:
-        r = requests.get(url, timeout=10, headers={"User-Agent": "FirstStrike/1.0"})
+        r = requests.get(url, timeout=10, headers={"User-Agent": "FirstStrike/2.0"})
         root = ET.fromstring(r.content)
         items = []
+        # Handle both RSS and Atom feeds
         for item in root.iter("item"):
             title = item.findtext("title", "")
             desc = item.findtext("description", "")
             link = item.findtext("link", "")
             pub_date = item.findtext("pubDate", "")
             items.append({"title": title, "description": desc, "link": link, "pub_date": pub_date})
-        return items[:20]
+        if not items:
+            # Try Atom format
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
+                title = entry.findtext("{http://www.w3.org/2005/Atom}title", "")
+                desc = entry.findtext("{http://www.w3.org/2005/Atom}summary", "")
+                link_el = entry.find("{http://www.w3.org/2005/Atom}link")
+                link = link_el.get("href", "") if link_el is not None else ""
+                items.append({"title": title, "description": desc, "link": link})
+        return items[:25]
     except Exception:
         return []
 
 
-def fetch_gdelt_iran() -> list[dict]:
-    """Query GDELT for recent Iran military events."""
+def fetch_gdelt(query, timespan="24h", max_records=25):
+    """Query GDELT for articles matching a keyword query."""
     try:
         params = {
-            "query": "iran military troops deployment",
+            "query": query,
             "mode": "artlist",
-            "maxrecords": 20,
+            "maxrecords": max_records,
             "format": "json",
-            "timespan": "24h",
-            "sort": "ToneDesc",
+            "timespan": timespan,
+            "sort": "DateDesc",
         }
         r = requests.get(GDELT_BASE, params=params, timeout=15)
         if r.status_code == 200:
@@ -135,74 +306,142 @@ def fetch_gdelt_iran() -> list[dict]:
     return []
 
 
-def run_beacon_cycle() -> list[Signal]:
-    """Run one full beacon cycle — returns new signals stored."""
+# ── Main Beacon Cycle ────────────────────────────────────────────────────────
+
+def run_beacon_cycle():
+    """
+    Run one full beacon cycle:
+    1. English RSS feeds
+    2. International RSS feeds (with translation)
+    3. Multiple GDELT queries
+    Returns list of new Signal objects stored.
+    """
     new_signals = []
 
-    # 1. RSS feeds
-    for feed_name, url in RSS_FEEDS.items():
+    # 1. English RSS feeds
+    for feed_name, url in RSS_FEEDS_EN.items():
         articles = fetch_rss(feed_name, url)
         for art in articles:
+            sig = _process_article(art, feed_name, lang="en")
+            if sig:
+                new_signals.append(sig)
+
+    # 2. International RSS feeds (translate title + description)
+    for feed_name, feed_info in RSS_FEEDS_INTL.items():
+        articles = fetch_rss(feed_name, feed_info["url"])
+        lang = feed_info["lang"]
+        for art in articles:
+            # Translate title and description
+            orig_title = art.get("title", "")
+            orig_desc = art.get("description", "")
+
+            translated_title = translate_text(orig_title, lang)
+            translated_desc = translate_text(orig_desc, lang)
+
+            # Check relevance on translated text
+            art_translated = {
+                "title": translated_title,
+                "description": translated_desc,
+                "link": art.get("link", ""),
+            }
+            sig = _process_article(art_translated, feed_name, lang=lang,
+                                   original_title=orig_title)
+            if sig:
+                new_signals.append(sig)
+
+        time.sleep(0.5)  # rate limit between international feeds
+
+    # 3. GDELT — multiple query sets for broader coverage
+    for query in GDELT_QUERIES:
+        gdelt_articles = fetch_gdelt(query)
+        for art in gdelt_articles:
             title = art.get("title", "")
-            body = art.get("description", "")
-            link = art.get("link", "")
+            url = art.get("url", "")
+            source = art.get("domain", "GDELT")
+            tone = float(art.get("tone", 0))
+            lang = art.get("language", "English")
 
-            if not _is_iran_relevant(title, body):
+            # Translate non-English GDELT articles
+            if lang and lang.lower() not in ("english", "en", ""):
+                title = translate_text(title, _lang_code(lang))
+
+            if not any(k in title.lower() for k in ALL_RELEVANT_KEYWORDS[:20]):
                 continue
 
-            score = _score_article(title, body, feed_name)
-            if score["importance"] < 35:
-                continue
+            direction = "bullish" if tone < -2 else "bearish" if tone > 2 else "neutral"
+            confidence = min(85, 55 + abs(int(tone)) * 3)
+            impact = round(tone * -0.5, 1)
 
             sig = Signal(
                 source_app="beacon",
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 headline=title[:150],
-                raw_text=body[:500],
-                signal_direction=score["direction"],
-                confidence_score=score["confidence"],
-                importance_score=score["importance"],
-                probability_impact_estimate=score["impact"],
-                reasoning=(
-                    f"[{feed_name}] Escalation terms: {score['esc']}, "
-                    f"De-escalation: {score['deesc']}, Iran refs: {score['iran_hits']}, "
-                    f"Military refs: {score['mil_hits']}"
-                ),
-                link=link,
+                raw_text=f"GDELT [{query}]. Tone: {tone:.1f}. Source: {source}. Lang: {lang}",
+                signal_direction=direction,
+                confidence_score=confidence,
+                importance_score=min(80, 50 + abs(int(tone)) * 4),
+                probability_impact_estimate=impact,
+                reasoning=f"GDELT query '{query}'. Tone: {tone:.1f}. Domain: {source}",
+                link=url,
                 market_slug=MARKET_SLUG,
             )
             if store_signal(sig):
                 new_signals.append(sig)
 
-    # 2. GDELT structured events
-    gdelt_articles = fetch_gdelt_iran()
-    for art in gdelt_articles:
-        title = art.get("title", "")
-        url = art.get("url", "")
-        source = art.get("domain", "GDELT")
-        tone = float(art.get("tone", 0))
-
-        if not any(k in title.lower() for k in IRAN_KEYWORDS):
-            continue
-
-        direction = "bullish" if tone < -2 else "bearish" if tone > 2 else "neutral"
-        confidence = min(85, 55 + abs(int(tone)) * 3)
-        impact = round(tone * -0.5, 1)  # negative tone = more conflict = bullish YES
-
-        sig = Signal(
-            source_app="beacon",
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            headline=title[:150],
-            raw_text=f"GDELT event. Tone score: {tone:.1f}. Source: {source}",
-            signal_direction=direction,
-            confidence_score=confidence,
-            importance_score=min(80, 50 + abs(int(tone)) * 4),
-            probability_impact_estimate=impact,
-            reasoning=f"GDELT structured event. Tone: {tone:.1f} (negative=conflict). Domain: {source}",
-            link=url,
-            market_slug=MARKET_SLUG,
-        )
-        if store_signal(sig):
-            new_signals.append(sig)
+        time.sleep(0.3)  # rate limit between GDELT queries
 
     return new_signals
+
+
+def _process_article(art, feed_name, lang="en", original_title=None):
+    """Process a single article and return a Signal if relevant, else None."""
+    title = art.get("title", "")
+    body = art.get("description", "")
+    link = art.get("link", "")
+
+    if not _is_relevant(title, body):
+        return None
+
+    score = _score_article(title, body, feed_name)
+    if score["importance"] < 35:
+        return None
+
+    # Build headline with language info
+    headline = title[:150]
+    if lang != "en" and original_title:
+        # Include original language title in raw_text for reference
+        raw_text = f"[Translated from {lang}] {body[:400]}\n\n[Original] {original_title[:150]}"
+    else:
+        raw_text = body[:500]
+
+    sig = Signal(
+        source_app="beacon",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        headline=headline,
+        raw_text=raw_text,
+        signal_direction=score["direction"],
+        confidence_score=score["confidence"],
+        importance_score=score["importance"],
+        probability_impact_estimate=score["impact"],
+        reasoning=(
+            f"[{feed_name}] lang={lang} Esc:{score['esc']} De-esc:{score['deesc']} "
+            f"Iran:{score['iran_hits']} Israel:{score['israel_hits']} "
+            f"Mil:{score['mil_hits']} Policy:{score['policy_hits']}"
+        ),
+        link=link,
+        market_slug=MARKET_SLUG,
+    )
+    if store_signal(sig):
+        return sig
+    return None
+
+
+def _lang_code(gdelt_lang):
+    """Map GDELT language names to ISO codes for translation."""
+    mapping = {
+        "arabic": "ar", "hebrew": "he", "persian": "fa", "farsi": "fa",
+        "french": "fr", "german": "de", "russian": "ru", "chinese": "zh",
+        "japanese": "ja", "turkish": "tr", "spanish": "es", "portuguese": "pt",
+        "korean": "ko", "hindi": "hi", "urdu": "ur", "italian": "it",
+    }
+    return mapping.get(gdelt_lang.lower(), "en")

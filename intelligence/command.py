@@ -29,10 +29,10 @@ URGENT_IMPORTANCE_THRESHOLD = 85
 # as older signals still in the window) adds narrative weight. Volatility
 # trend provides a market-physics signal. Market and OrderFlow lag real events.
 DESK_WEIGHTS = {
-    "pulse":     0.45,   # X/Twitter: highest — real-time official + analyst signal
-    "beacon":    0.38,   # News/GDELT: second — credibility-scored journalism
-    "market":    0.12,   # Polymarket price/momentum: crowd-sourced, lags events
-    "orderflow": 0.05,   # Order book depth: slowest to update, positional only
+    "pulse":     0.40,   # X/Twitter: highest — real-time official + analyst signal
+    "beacon":    0.35,   # News/GDELT: second — credibility-scored journalism
+    "market":    0.10,   # Polymarket price/momentum: crowd-sourced, lags events
+    "orderflow": 0.15,   # Order book depth: elevated — strong imbalances signal big moves
 }
 
 # How much volatility (price momentum) can shift the estimate.
@@ -218,13 +218,21 @@ def _determine_alert(signals: list, converging: bool, max_importance: int,
     # Check for major price movement signal
     major_price_move = abs(odds_delta) >= 5
 
-    # Check for strong order book shift
+    # Check for strong order book shift — now a first-class alert trigger
     strong_ob = ob_bias in ("bullish", "bearish") and max_importance >= 70
+    extreme_ob = any(
+        s.get("source_app") == "orderflow" and s.get("importance_score", 0) >= 80
+        for s in signals
+    )
 
     if has_official or (multi_app and major_price_move):
         return "URGENT", "urgent"
+    elif extreme_ob and (multi_app or major_price_move):
+        return "URGENT", "urgent"  # extreme orderflow + other confirmation = urgent
     elif multi_app or (max_importance >= HIGH_IMPORTANCE_THRESHOLD and abs(odds_delta) >= 2):
         return "IMPORTANT", "edge"
+    elif extreme_ob or (strong_ob and abs(odds_delta) >= 1):
+        return "IMPORTANT", "edge"  # extreme orderflow alone = important
     elif len(signals) >= 3 or max_importance >= 60:
         return "DIGEST", "monitor"
     else:
@@ -297,7 +305,11 @@ def generate_market_signal(market) -> Optional[Signal]:
 
 
 def generate_orderflow_signal(market) -> Optional[Signal]:
-    """Generate a signal from current order book state."""
+    """
+    Generate a signal from current order book state.
+    Lower threshold (0.05) catches early shifts.
+    Extreme imbalance (>0.25) generates high-importance alerts.
+    """
     if not market or not market.clob_token_ids:
         return None
     try:
@@ -309,22 +321,39 @@ def generate_orderflow_signal(market) -> Optional[Signal]:
         ask_notional = depth.get("total_ask_notional", 0)
         spread = depth.get("spread", 0.02)
 
-        if abs(imbalance) < 0.10:
-            return None
+        if abs(imbalance) < 0.05:
+            return None  # too balanced to be interesting
 
         direction = "bullish" if imbalance > 0 else "bearish"
         strength = abs(imbalance)
-        importance = min(90, int(strength * 100))
-        confidence = min(88, int(50 + strength * 60))
 
-        if imbalance > 0.3:
-            headline = f"Strong buy pressure: ${bid_notional:,.0f} bids vs ${ask_notional:,.0f} asks"
-        elif imbalance < -0.3:
-            headline = f"Sell wall forming: ${ask_notional:,.0f} asks vs ${bid_notional:,.0f} bids"
-        elif imbalance > 0:
-            headline = f"Mild buy pressure: imbalance {imbalance:+.3f}"
+        # Tiered importance: extreme imbalance gets high-priority alert
+        if strength >= 0.40:
+            importance = 92
+            confidence = 88
+        elif strength >= 0.25:
+            importance = 80
+            confidence = 82
+        elif strength >= 0.15:
+            importance = 65
+            confidence = 70
         else:
-            headline = f"Mild sell pressure: imbalance {imbalance:+.3f}"
+            importance = 45
+            confidence = 55
+
+        # Descriptive headlines by tier
+        if imbalance > 0.40:
+            headline = f"MASSIVE buy pressure: ${bid_notional:,.0f} bids vs ${ask_notional:,.0f} asks (imb {imbalance:+.2f})"
+        elif imbalance > 0.25:
+            headline = f"Strong buy pressure: ${bid_notional:,.0f} bids vs ${ask_notional:,.0f} asks"
+        elif imbalance < -0.40:
+            headline = f"MASSIVE sell wall: ${ask_notional:,.0f} asks vs ${bid_notional:,.0f} bids (imb {imbalance:+.2f})"
+        elif imbalance < -0.25:
+            headline = f"Heavy sell pressure: ${ask_notional:,.0f} asks vs ${bid_notional:,.0f} bids"
+        elif imbalance > 0:
+            headline = f"Buy-side leaning: imbalance {imbalance:+.3f} (${bid_notional:,.0f} bids)"
+        else:
+            headline = f"Sell-side leaning: imbalance {imbalance:+.3f} (${ask_notional:,.0f} asks)"
 
         return Signal(
             source_app="orderflow",
@@ -335,7 +364,7 @@ def generate_orderflow_signal(market) -> Optional[Signal]:
             confidence_score=confidence,
             importance_score=importance,
             probability_impact_estimate=round(imbalance * 3, 2),
-            reasoning=f"CLOB order book analysis. Spread: {spread*100:.2f}¢. Net imbalance: {imbalance:+.3f}",
+            reasoning=f"CLOB order book. Spread: {spread*100:.2f}¢. Imbalance: {imbalance:+.3f}. Strength tier: {'EXTREME' if strength >= 0.40 else 'STRONG' if strength >= 0.25 else 'MODERATE' if strength >= 0.15 else 'MILD'}",
             link="https://polymarket.com/event/us-forces-enter-iran-by",
             market_slug=MARKET_SLUG,
         )
