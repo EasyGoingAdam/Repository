@@ -1757,11 +1757,6 @@ def orderflow_desk():
     with open(Path(__file__).parent / "static" / "desk-orderflow.html") as f:
         return f.read()
 
-@app.get("/volatility", response_class=HTMLResponse)
-def volatility_desk():
-    with open(Path(__file__).parent / "static" / "desk-volatility.html") as f:
-        return f.read()
-
 @app.get("/historian", response_class=HTMLResponse)
 def historian_desk():
     with open(Path(__file__).parent / "static" / "desk-historian.html") as f:
