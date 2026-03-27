@@ -19,6 +19,9 @@ from .signals import Signal, store_signal, MARKET_SLUG
 TWITTER_API_KEY = os.environ.get("TWITTER_API_KEY", "")
 TWITTERAPI_BASE = "https://api.twitterapi.io"   # NOTE: no /twitter suffix on base
 
+# Stores the last cycle's breaking/alert signals for the intel loop to consume
+_last_cycle_alerts: list = []
+
 # ── Monitored accounts ────────────────────────────────────────────────────────
 PRIORITY_ACCOUNTS = [
     # US Government / Military
@@ -126,6 +129,41 @@ DENIAL_TERMS = [
     "no military action", "diplomatic solution",
 ]
 
+# ── Breaking news patterns — phrases that indicate CONFIRMED events ───────────
+BREAKING_PHRASES = [
+    # Confirmed military action
+    "troops entered iran", "soldiers in iran", "boots on the ground in iran",
+    "forces crossed into iran", "ground invasion of iran", "us forces in iran",
+    "american troops in iran", "military entered iran", "deployed to iran",
+    "entered iranian territory", "crossed the border into iran",
+    # Ceasefire/peace
+    "ceasefire signed", "ceasefire agreed", "ceasefire reached", "ceasefire announced",
+    "peace deal signed", "peace agreement reached", "iran ceasefire",
+    "iran agreed to ceasefire", "iran accepts ceasefire",
+    # War / escalation confirmed
+    "war declared", "declaration of war", "iran at war", "state of war",
+    "iran confirms attack", "us declares war", "war on iran",
+    # Nuclear milestone
+    "iran has nuclear weapon", "iran detonated", "nuclear test iran",
+    "iran achieved nuclear", "iran bomb confirmed",
+    # Official confirmation language
+    "#breaking", "breaking:", "just in:", "alert:", "confirmed:",
+    "we confirm", "we can confirm", "officially confirmed",
+]
+
+# High-credibility accounts whose tweets ALWAYS get reply scanning
+TIER1_ACCOUNTS = {
+    "DeptofDefense", "CENTCOM", "SecDef", "StateDept", "POTUS",
+    "Reuters", "AP", "BBCWorld", "AFP", "iranintl",
+}
+
+# Confirmation words found in replies that boost the alert tier
+REPLY_CONFIRMATION_TERMS = [
+    "confirmed", "breaking", "verified", "multiple sources", "official",
+    "developing", "just confirmed", "sources confirm", "now confirmed",
+    "several outlets", "can confirm", "#confirmed", "#breaking",
+]
+
 OFFICIAL_BIO_TERMS = [
     "official", "government", "minister", "secretary", "pentagon",
     "ambassador", "department", "ministry", "general", "admiral",
@@ -224,6 +262,31 @@ def get_user_profile(username: str) -> dict:
         print(f"[Pulse] profile exception for @{username}: {e}")
     _PROFILE_CACHE[username] = {}
     return {}
+
+
+def get_tweet_replies(tweet_id: str, count: int = 10) -> list:
+    """
+    Fetch replies to a tweet using conversation_id search.
+    Uses twitterapi.io advanced_search with conversation_id filter.
+    """
+    if not TWITTER_API_KEY or not tweet_id:
+        return []
+    try:
+        r = requests.get(
+            f"{TWITTERAPI_BASE}/twitter/tweet/advanced_search",
+            headers=_headers(),
+            params={"query": f"conversation_id:{tweet_id}", "queryType": "Latest"},
+            timeout=15,
+        )
+        if r.status_code == 200:
+            tweets = r.json().get("tweets", [])
+            # Filter out the original tweet — only replies
+            return [t for t in tweets if str(t.get("id", "")) != str(tweet_id)][:count]
+        else:
+            print(f"[Pulse] replies error {r.status_code} for tweet {tweet_id}: {r.text[:120]}")
+    except Exception as e:
+        print(f"[Pulse] replies exception: {e}")
+    return []
 
 
 def _extract_author(tweet: dict) -> str:
@@ -325,6 +388,70 @@ def _score_tweet(text: str, username: str) -> dict:
     }
 
 
+def _breaking_tier(text: str, username: str, score: dict, replies: list = None) -> str:
+    """
+    Classify a tweet as 'BREAKING', 'ALERT', or '' (routine).
+
+    BREAKING — immediate email, very high confidence of major event
+    ALERT    — important signal, fires with normal cooldown
+    ''       — routine, stored but no special alert
+    """
+    text_lower = text.lower()
+    is_tier1 = username in TIER1_ACCOUNTS
+    cred = score.get("credibility", 0)
+    importance = score.get("importance", 0)
+
+    # Check for breaking phrases
+    phrase_hits = sum(1 for p in BREAKING_PHRASES if p in text_lower)
+
+    # Check replies for confirmation
+    reply_confirmations = 0
+    reply_breaking_phrases = 0
+    if replies:
+        for reply in replies:
+            reply_text = reply.get("text", "").lower()
+            reply_confirmations += sum(1 for t in REPLY_CONFIRMATION_TERMS if t in reply_text)
+            reply_breaking_phrases += sum(1 for p in BREAKING_PHRASES if p in reply_text)
+
+    # BREAKING tier conditions:
+    # 1. Tier 1 account + breaking phrase
+    # 2. Very high importance (90+) from high-credibility source (80+) + breaking phrase
+    # 3. 2+ breaking phrases regardless of source
+    # 4. 3+ reply confirmations from various accounts
+    if (is_tier1 and phrase_hits >= 1):
+        return "BREAKING"
+    if (cred >= 80 and importance >= 88 and phrase_hits >= 1):
+        return "BREAKING"
+    if phrase_hits >= 2:
+        return "BREAKING"
+    if reply_breaking_phrases >= 2 or reply_confirmations >= 4:
+        return "BREAKING"
+
+    # ALERT tier conditions:
+    # High-importance signal from credible source
+    if importance >= 75 and cred >= 65:
+        return "ALERT"
+    if is_tier1 and importance >= 60:
+        return "ALERT"
+    if phrase_hits >= 1 and cred >= 55:
+        return "ALERT"
+
+    return ""
+
+
+def _scan_replies(tweet_id: str, username: str, importance: int) -> list:
+    """
+    Scan replies for a tweet if it's high-importance or from a Tier 1 account.
+    Returns list of reply tweets (may be empty).
+    """
+    # Only scan if worth the API call
+    if not tweet_id:
+        return []
+    if importance >= 75 or username in TIER1_ACCOUNTS:
+        return get_tweet_replies(tweet_id, count=10)
+    return []
+
+
 def _fmt_followers(n: int) -> str:
     if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
     if n >= 1_000:     return f"{n/1_000:.0f}K"
@@ -336,8 +463,11 @@ def run_pulse_cycle() -> list:
     Run one full pulse cycle.
     Rotates through 3 search queries (20 results each) + monitors priority accounts.
     Returns list of newly stored Signal objects.
+    Populates _last_cycle_alerts with any BREAKING/ALERT tier signals detected.
     """
-    global _query_idx
+    global _query_idx, _last_cycle_alerts
+    _last_cycle_alerts = []
+
     if not TWITTER_API_KEY:
         print("[Pulse] No TWITTER_API_KEY set — skipping cycle")
         return []
@@ -390,6 +520,23 @@ def run_pulse_cycle() -> list:
             if store_signal(sig):
                 new_signals.append(sig)
 
+            # Check breaking tier (with reply scanning for high-importance)
+            replies = _scan_replies(tw_id, username, score["importance"])
+            tier = _breaking_tier(text, username, score, replies)
+            if tier:
+                _last_cycle_alerts.append({
+                    "signal_id": sig.id,
+                    "tier": tier,
+                    "tweet_text": text,
+                    "username": username,
+                    "link": sig.link,
+                    "importance": score["importance"],
+                    "credibility": score["credibility"],
+                    "direction": score["direction"],
+                    "verified": score.get("verified", False),
+                    "reply_count": len(replies),
+                })
+
     # 2. Priority account monitoring
     for account in PRIORITY_ACCOUNTS:
         tweets = get_user_timeline(account, count=5)
@@ -406,6 +553,7 @@ def run_pulse_cycle() -> list:
             seen.add(text[:60])
             score = _score_tweet(text, account)
 
+            tw_id = _extract_tweet_id(tw)
             reasoning = (
                 f"[{score['classification']}] Official account @{account} "
                 f"(cred:{score['credibility']}"
@@ -428,5 +576,27 @@ def run_pulse_cycle() -> list:
             if store_signal(sig):
                 new_signals.append(sig)
 
-    print(f"[Pulse] cycle complete — {len(new_signals)} new signals stored")
+            # Check breaking tier (with reply scanning for high-importance)
+            replies = _scan_replies(tw_id, account, score["importance"])
+            tier = _breaking_tier(text, account, score, replies)
+            if tier:
+                _last_cycle_alerts.append({
+                    "signal_id": sig.id,
+                    "tier": tier,
+                    "tweet_text": text,
+                    "username": account,
+                    "link": sig.link,
+                    "importance": score["importance"],
+                    "credibility": score["credibility"],
+                    "direction": score["direction"],
+                    "verified": score.get("verified", False),
+                    "reply_count": len(replies),
+                })
+
+    print(f"[Pulse] cycle complete — {len(new_signals)} new signals stored, {len(_last_cycle_alerts)} alert(s)")
     return new_signals
+
+
+def get_last_cycle_alerts() -> list:
+    """Return breaking/alert signals detected in the last pulse cycle."""
+    return list(_last_cycle_alerts)

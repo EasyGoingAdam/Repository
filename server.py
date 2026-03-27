@@ -35,8 +35,9 @@ from intelligence.signals import (
     get_all_latest_volatility, get_active_trading_signals as db_get_active_signals,
     add_subscriber, get_active_subscribers, update_last_sms,
     add_email_subscriber, get_active_email_subscribers, update_last_email, unsubscribe_email,
+    mark_signal_alerted,
 )
-from intelligence.pulse import run_pulse_cycle
+from intelligence.pulse import run_pulse_cycle, get_last_cycle_alerts
 from intelligence.beacon import run_beacon_cycle
 from intelligence.command import run_command_cycle, generate_market_signal, generate_orderflow_signal
 from intelligence.signals import store_signal
@@ -131,21 +132,31 @@ def _intel_loop():
             run_pulse_cycle()
             cmd_state = run_command_cycle()
 
-            # ── First Mover: alert on fresh high-importance Pulse signals ─────
+            # ── Pulse Breaking News Alerts ────────────────────────────────────
             try:
-                fresh_pulse = get_recent_signals(hours=0.5, source='pulse', limit=5)  # last 30 min
-                for sig in fresh_pulse:
-                    if (sig.get('importance_score', 0) >= 75 and
-                            sig.get('signal_direction') in ('bullish', 'bearish')):
-                        # This is a First Mover signal — alert immediately
-                        fm_headline = f"[FIRST MOVER] {sig.get('headline', '')}"
-                        fm_impact = sig.get('probability_impact_estimate', 0)
-                        alert_msg = f"{fm_headline} | Expected: {'+' if fm_impact>0 else ''}{fm_impact:.1f}pp"
-                        send_alert_email("URGENT", alert_msg, cmd_state.get("market_odds"))
-                        print(f"[Intel] First Mover alert fired: {fm_headline[:60]}")
-                        break  # Only one alert per cycle
+                cycle_alerts = get_last_cycle_alerts()
+                if cycle_alerts:
+                    market_odds = cmd_state.get("market_odds") if cmd_state else None
+                    for alert in cycle_alerts:
+                        sig_id = alert.get("signal_id")
+                        tier   = alert.get("tier", "")
+                        if not tier or not sig_id:
+                            continue
+
+                        # Fire the alert
+                        send_pulse_alert(alert, odds=market_odds)
+                        mark_signal_alerted(sig_id)
+
+                        print(f"[Intel] Pulse {tier} alert fired — @{alert.get('username')} imp={alert.get('importance')}")
+
+                        # For BREAKING tier, also send legacy send_alert_email for belt-and-suspenders
+                        if tier == "BREAKING":
+                            brk_headline = f"[X BREAKING] @{alert.get('username')}: {alert.get('tweet_text','')[:100]}"
+                            send_alert_email("URGENT", brk_headline, market_odds)
+
+                        break  # One alert per cycle to avoid spam
             except Exception as e:
-                print(f"[Intel] First Mover check error: {e}")
+                print(f"[Intel] Pulse alert error: {e}")
 
             # ── SMS alert if URGENT or IMPORTANT ──────────────────────────────
             alert_lvl = cmd_state.get("alert_level", "")
@@ -1424,6 +1435,84 @@ def _email_html(urgency_label: str, urgency_color: str, headline: str, price_str
 </html>"""
 
 
+def _pulse_alert_email_html(tier: str, tweet_text: str, username: str, tweet_link: str,
+                             credibility: int, verified: bool, importance: int,
+                             direction: str, price_str: str) -> str:
+    """Build a breaking-news email from a Pulse/X signal."""
+    tier_color  = "rgba(239,68,68,.9)"  if tier == "BREAKING" else "rgba(234,179,8,.8)"
+    tier_label  = "🚨 BREAKING — X/TWITTER ALERT" if tier == "BREAKING" else "⚠️ ALERT — X/TWITTER SIGNAL"
+    dir_color   = "#22c55e" if direction == "bearish" else "#ef4444" if direction == "bullish" else "#94a3b8"
+    dir_label   = "⬆ BULLISH (price likely UP)" if direction == "bullish" else "⬇ BEARISH (price likely DOWN)" if direction == "bearish" else "◼ NEUTRAL"
+    verified_badge = " ✓" if verified else ""
+    cred_bar_w  = min(100, credibility)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#060a0f;font-family:'Courier New',monospace">
+  <div style="max-width:580px;margin:0 auto;padding:24px">
+    <div style="background:#0d1520;border:1px solid #1a2535;border-radius:10px;overflow:hidden">
+      <!-- Header -->
+      <div style="background:linear-gradient(90deg,#0a0f1a,#0d1520);padding:16px 24px;border-bottom:1px solid #1a2535;display:flex;align-items:center;gap:12px">
+        <span style="font-size:18px;font-weight:900;letter-spacing:.12em;color:#fff">
+          <span style="color:#ef4444">FIRST</span> STRIKE
+        </span>
+        <span style="font-size:11px;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:2px 10px;border-radius:4px;font-weight:700;letter-spacing:.08em">INTELLIGENCE</span>
+        <span style="margin-left:auto;font-size:10px;color:#64748b;letter-spacing:.04em">PULSE / X MONITOR</span>
+      </div>
+      <!-- Tier banner -->
+      <div style="background:{tier_color};padding:10px 24px">
+        <span style="font-size:13px;font-weight:700;color:#fff;letter-spacing:.06em">{tier_label}</span>
+      </div>
+      <!-- Tweet content -->
+      <div style="padding:20px 24px">
+        <div style="background:#060a0f;border-left:3px solid #3b82f6;border-radius:0 6px 6px 0;padding:14px 16px;margin-bottom:16px">
+          <div style="font-size:11px;color:#64748b;margin-bottom:8px">
+            @{username}{verified_badge} &nbsp;·&nbsp; Importance: {importance}/100 &nbsp;·&nbsp; Credibility: {credibility}/100
+          </div>
+          <div style="font-size:14px;color:#e2e8f0;line-height:1.6;font-style:italic">
+            "{tweet_text[:280]}"
+          </div>
+        </div>
+        <!-- Direction + price -->
+        <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+          <div style="background:#060a0f;border:1px solid #1a2535;border-radius:6px;padding:10px 14px;flex:1;min-width:120px">
+            <div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Signal Direction</div>
+            <div style="font-size:13px;font-weight:700;color:{dir_color}">{dir_label}</div>
+          </div>
+          <div style="background:#060a0f;border:1px solid #1a2535;border-radius:6px;padding:10px 14px;flex:1;min-width:120px">
+            <div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Iran Boots Market</div>
+            <div style="font-size:20px;font-weight:700;color:#eab308">{price_str}</div>
+          </div>
+        </div>
+        <!-- Credibility bar -->
+        <div style="margin-bottom:20px">
+          <div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Source Credibility</div>
+          <div style="background:#1a2535;border-radius:4px;height:6px;width:100%">
+            <div style="background:#3b82f6;height:6px;border-radius:4px;width:{cred_bar_w}%"></div>
+          </div>
+        </div>
+        <!-- CTA -->
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <a href="{tweet_link}" style="display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:#3b82f6;padding:10px 18px;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none">
+            → View on X/Twitter
+          </a>
+          <a href="https://USvsIran.Trade" style="display:inline-block;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#ef4444;padding:10px 18px;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none">
+            → Open Dashboard
+          </a>
+        </div>
+      </div>
+      <!-- Footer -->
+      <div style="padding:12px 24px;border-top:1px solid #1a2535;font-size:10px;color:#64748b">
+        First Strike Intelligence · <a href="https://USvsIran.Trade" style="color:#64748b">USvsIran.Trade</a>
+        · <a href="https://USvsIran.Trade/api/unsubscribe?email=__EMAIL__" style="color:#64748b">Unsubscribe</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
 def send_alert_email(alert_level: str, headline: str, odds=None):
     """
     Email all active subscribers when URGENT or IMPORTANT signal fires.
@@ -1462,6 +1551,56 @@ def send_alert_email(alert_level: str, headline: str, odds=None):
         result = _send_email(sub["email"], subject, html)
         if result.get("ok"):
             update_last_email(sub["email"])
+
+
+def send_pulse_alert(alert: dict, odds=None):
+    """
+    Send a breaking-news Pulse/X alert to all subscribers.
+    Uses a richer email template showing the tweet, source, and link.
+    Has a 20-minute cooldown for BREAKING, 60-minute for ALERT.
+    """
+    from datetime import datetime as _dt3, timezone as _tz3, timedelta as _td3
+
+    tier      = alert.get("tier", "ALERT")
+    tweet     = alert.get("tweet_text", "")[:280]
+    username  = alert.get("username", "unknown")
+    link      = alert.get("link", "https://twitter.com")
+    cred      = alert.get("credibility", 50)
+    verified  = alert.get("verified", False)
+    imp       = alert.get("importance", 0)
+    direction = alert.get("direction", "neutral")
+
+    price_str = f"{odds:.1f}¢ YES" if odds else "—"
+    subject   = f"{'🚨 BREAKING' if tier == 'BREAKING' else '⚠️ ALERT'} — @{username}: {tweet[:55]}..."
+
+    cooldown_min = 20 if tier == "BREAKING" else 60
+    cooldown     = _td3(minutes=cooldown_min)
+    now          = _dt3.now(_tz3.utc)
+
+    subscribers = get_active_email_subscribers()
+    if not subscribers:
+        print(f"[Pulse Alert] No subscribers — skipping")
+        return
+
+    sent_count = 0
+    for sub in subscribers:
+        last = sub.get("last_email_at")
+        if last:
+            try:
+                last_dt = _dt3.fromisoformat(last.replace("Z", "+00:00"))
+                if now - last_dt < cooldown:
+                    continue
+            except Exception:
+                pass
+        html = _pulse_alert_email_html(
+            tier, tweet, username, link, cred, verified, imp, direction, price_str
+        ).replace("__EMAIL__", sub["email"])
+        result = _send_email(sub["email"], subject, html)
+        if result.get("ok"):
+            update_last_email(sub["email"])
+            sent_count += 1
+
+    print(f"[Pulse Alert] {tier} alert sent to {sent_count}/{len(subscribers)} subscriber(s) — @{username}")
 
 
 # keep old name as alias so video_monitor.py still works

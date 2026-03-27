@@ -255,6 +255,12 @@ def init_db():
         )
     """)
     conn.commit()
+    # Migration: add alert_sent column if it doesn't exist yet
+    try:
+        conn.execute("ALTER TABLE signals ADD COLUMN alert_sent INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 
@@ -686,18 +692,27 @@ def store_signal(sig: Signal) -> bool:
         conn.close()
 
 
-def get_recent_signals(hours: int = 24, source: str = None, limit: int = 100) -> list[dict]:
+def mark_signal_alerted(signal_id: str):
+    """Mark a signal as having triggered an email alert (prevents duplicate alerts)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE signals SET alert_sent=1 WHERE id=?", (signal_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_recent_signals(hours: int = 24, source: str = None, limit: int = 100, unalerted_only: bool = False) -> list[dict]:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    unalerted_clause = " AND (alert_sent IS NULL OR alert_sent = 0)" if unalerted_only else ""
     if source:
         rows = conn.execute(
-            "SELECT * FROM signals WHERE timestamp > ? AND source_app = ? ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM signals WHERE timestamp > ? AND source_app = ?{unalerted_clause} ORDER BY created_at DESC LIMIT ?",
             (since, source, limit)
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM signals WHERE timestamp > ? ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM signals WHERE timestamp > ?{unalerted_clause} ORDER BY created_at DESC LIMIT ?",
             (since, limit)
         ).fetchall()
     conn.close()
