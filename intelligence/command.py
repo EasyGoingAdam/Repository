@@ -92,11 +92,24 @@ def run_command_cycle() -> dict:
     bear_weight = sum(_signal_weight(s) for s in bearish)
     total_weight = bull_weight + bear_weight + 1
 
-    # 6. Compute house odds (blend market price with signal direction)
-    # Max signal adjustment raised to 15pp so strong convergent signals
-    # can meaningfully diverge from the market price.
+    # 6. Compute house odds (START from market price, adjust based on signals)
+    # Adjustment scales with signal quality: high-importance signals from
+    # Pulse/Beacon move it more than market/orderflow noise.
+    # Max ±20pp from strong convergent intelligence.
     if market_odds is not None and signals:
-        signal_adjustment = (bull_weight - bear_weight) / total_weight * 0.15
+        raw_ratio = (bull_weight - bear_weight) / total_weight
+
+        # Quality factor: how much of the DIRECTIONAL signal weight comes from
+        # high-value desks (pulse + beacon) vs noise (market + orderflow)?
+        directional = bullish + bearish
+        pb_directional = [s for s in directional if s.get("source_app") in ("pulse", "beacon")]
+        pb_weight = sum(_signal_weight(s) for s in pb_directional)
+        total_dir_weight = bull_weight + bear_weight
+        quality_factor = (pb_weight / total_dir_weight) if total_dir_weight > 0 else 0.3
+        quality_factor = max(0.3, min(1.0, quality_factor))  # floor at 30%
+
+        # Scale: ±20pp max, dampened by quality factor
+        signal_adjustment = raw_ratio * 0.20 * quality_factor
 
         # Volatility component: incorporate price momentum (z-score from
         # stored volatility metrics or live computation).

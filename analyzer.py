@@ -93,18 +93,29 @@ def analyze_market(market: Market, weights: dict = None) -> Prediction:
         trade_flow = _trade_flow_signal(trades)
     signals["trade_flow"] = trade_flow
 
-    # Composite score: weighted combination of signals
-    # Signals are mapped to probability-space adjustments around market_price
+    # Composite score: START from market price, then adjust based on signals.
+    # Each signal can push the estimate up or down from the market baseline.
+    # Total adjustment range scales with signal strength — strong convergent
+    # signals can move the estimate up to ±20pp from market price.
+    #
+    # Signal contributions (in probability points):
+    #   momentum:       ±0 to ±6pp  (strong trend = big move)
+    #   volume:         ±0 to ±2pp  (high volume confirms direction)
+    #   liquidity:      ±0 to ±2pp  (deep book = efficient pricing)
+    #   time_decay:     ±0 to ±3pp  (near expiry = trust price more)
+    #   orderbook_imb:  ±0 to ±4pp  (buy/sell pressure)
+    #   trade_flow:     ±0 to ±3pp  (net recent trade direction)
     adjustment = (
-        weights["momentum"] * momentum_score * 0.1 +
-        weights["volume_conviction"] * (volume_score - 0.5) * 0.05 +
-        weights["liquidity_quality"] * (liquidity_score - 0.5) * 0.05 +
-        weights["time_decay"] * time_signal * 0.05 +
-        weights["orderbook_imbalance"] * ob_signal * 0.05 +
-        weights["trade_flow"] * trade_flow * 0.05
+        weights["momentum"] * momentum_score * 0.60 +
+        weights["volume_conviction"] * (volume_score - 0.5) * 0.25 +
+        weights["liquidity_quality"] * (liquidity_score - 0.5) * 0.25 +
+        weights["time_decay"] * time_signal * 0.30 +
+        weights["orderbook_imbalance"] * ob_signal * 0.50 +
+        weights["trade_flow"] * trade_flow * 0.40
     )
 
-    raw_prob = market_price * weights["market_price"] + adjustment
+    # Start FROM market price, adjust up/down
+    raw_prob = market_price + adjustment
     # Clamp to [0.02, 0.98]
     predicted_prob = max(0.02, min(0.98, raw_prob))
 
