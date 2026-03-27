@@ -155,20 +155,41 @@ OFFICIAL_SOURCES = {
     "NHK World": 78, "TRT Haber": 65,
 }
 
-ESCALATION_PHRASES = [
-    "sends troops", "deploys forces", "military action", "ground invasion",
-    "boots on the ground", "special operations", "armed conflict",
-    "declares war", "attacks iran", "enters iran", "crosses border",
-    "imminent attack", "strike planned", "mobilization", "war footing",
-    "retaliatory strike", "preemptive", "nuclear threat", "red line",
-    "ultimatum", "military buildup", "carrier group", "battle stations",
+# Escalation: use short stems/words so "deployed", "deploying", "deploys" all match
+ESCALATION_WORDS = [
+    "deploy", "invasion", "invade", "invaded", "offensive", "mobiliz",
+    "airstrike", "airstrikes", "bombing", "bombed", "missile", "missiles",
+    "strike", "strikes", "attack", "attacked", "attacking",
+    "troops", "soldiers", "infantry", "marines", "battalion",
+    "war ", " war", "wartime", "warfare", "combat",
+    "boots on the ground", "ground forces", "ground offensive",
+    "special forces", "special ops", "navy seal",
+    "carrier group", "battle group", "naval fleet",
+    "mobilization", "military buildup", "war footing",
+    "declares war", "declaration of war",
+    "escalat", "retaliat", "preemptive",
+    "nuclear threat", "red line", "ultimatum",
+    "crosses border", "enters iran", "invaded iran",
+    "fires at", "fires on", "fired at", "fired on",
+    "shoots down", "shot down", "intercept",
+    "blockade", "siege", "embargo",
+    "casualties", "killed", "wounded",
+    "explosion", "detonation", "blast",
 ]
 
-DEESCALATION_PHRASES = [
-    "diplomatic solution", "sanctions lifted", "peace talks", "ceasefire",
-    "nuclear agreement", "no military", "withdraw", "de-escalate",
-    "truce", "stand down", "pullback", "cooling tensions",
-    "back-channel", "mediation", "humanitarian corridor",
+DEESCALATION_WORDS = [
+    "ceasefire", "cease-fire", "cease fire",
+    "peace talk", "peace deal", "peace agreement", "peace plan",
+    "diplomatic", "diplomacy", "negotiat", "mediat",
+    "truce", "armistice", "stand down", "de-escalat",
+    "withdraw", "pullback", "pull back", "pullout", "pull out",
+    "sanctions lifted", "sanctions relief", "sanctions eased",
+    "nuclear agreement", "nuclear deal",
+    "humanitarian", "aid corridor",
+    "back-channel", "backchannel",
+    "cooling tension", "tensions eas", "tensions cool",
+    "no military", "rules out military",
+    "restraint", "calm", "deescalat",
 ]
 
 
@@ -209,8 +230,8 @@ def translate_text(text, source_lang, target_lang="en"):
 
 def _score_article(title, body, source):
     text = (title + " " + body).lower()
-    esc = sum(1 for p in ESCALATION_PHRASES if p in text)
-    deesc = sum(1 for p in DEESCALATION_PHRASES if p in text)
+    esc = sum(1 for w in ESCALATION_WORDS if w in text)
+    deesc = sum(1 for w in DEESCALATION_WORDS if w in text)
     iran_hits = sum(1 for k in IRAN_KEYWORDS if k in text)
     israel_hits = sum(1 for k in ISRAEL_KEYWORDS if k in text)
     mil_hits = sum(1 for k in MILITARY_KEYWORDS if k in text)
@@ -218,22 +239,38 @@ def _score_article(title, body, source):
 
     credibility = OFFICIAL_SOURCES.get(source, 60)
 
+    # Keyword-based fallback: if an article mentions Iran/Israel + military
+    # keywords but no exact escalation phrases, infer direction from context
+    if esc == 0 and deesc == 0 and (iran_hits + israel_hits) >= 1:
+        if mil_hits >= 3:
+            esc = 1  # military-heavy Iran/Israel article = mild escalation
+        elif policy_hits >= 2 and mil_hits == 0:
+            deesc = 1  # policy-heavy, no military = mild de-escalation
+
     if esc > deesc:
         direction = "bullish"
-        confidence = min(95, credibility + esc * 6)
-        impact = round(esc * 2.0, 1)
+        confidence = min(95, credibility + esc * 5)
+        impact = round(min(esc * 1.5, 8.0), 1)
     elif deesc > esc:
         direction = "bearish"
-        confidence = min(95, credibility + deesc * 5)
-        impact = round(-deesc * 1.5, 1)
+        confidence = min(95, credibility + deesc * 4)
+        impact = round(max(-deesc * 1.2, -6.0), 1)
     else:
         direction = "neutral"
-        confidence = max(30, credibility - 15)
+        confidence = max(30, credibility - 20)
         impact = 0.0
 
-    importance = min(100, credibility + (esc + deesc) * 7
-                     + iran_hits * 3 + israel_hits * 3
-                     + mil_hits * 3 + policy_hits * 2)
+    # Importance: blend credibility with directional signal strength
+    # Cap keyword contributions so importance spreads across 40-100 range
+    dir_strength = min(max(esc, deesc), 5)  # cap at 5 to avoid all-100
+    importance = min(100, int(
+        credibility * 0.6
+        + dir_strength * 6
+        + min(iran_hits, 2) * 2
+        + min(israel_hits, 2) * 2
+        + min(mil_hits, 3) * 1.5
+        + min(policy_hits, 2) * 1
+    ))
 
     return {
         "direction": direction,
@@ -256,6 +293,22 @@ def _is_relevant(title, body):
         return True
     total_hits = sum(1 for k in ALL_RELEVANT_KEYWORDS if k in text)
     return total_hits >= 3
+
+
+# ── Deduplication ────────────────────────────────────────────────────────────
+
+_seen_headlines = set()  # in-memory dedup cache (cleared on restart)
+
+def _is_duplicate(title):
+    """Check if we've already processed this headline this session."""
+    key = hashlib.md5(title.strip().lower().encode()).hexdigest()
+    if key in _seen_headlines:
+        return True
+    _seen_headlines.add(key)
+    # Keep cache from growing unbounded
+    if len(_seen_headlines) > 5000:
+        _seen_headlines.clear()
+    return False
 
 
 # ── RSS Fetching ─────────────────────────────────────────────────────────────
@@ -398,6 +451,10 @@ def _process_article(art, feed_name, lang="en", original_title=None):
     title = art.get("title", "")
     body = art.get("description", "")
     link = art.get("link", "")
+
+    # Deduplicate: skip if we've already seen this headline
+    if _is_duplicate(title):
+        return None
 
     if not _is_relevant(title, body):
         return None

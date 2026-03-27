@@ -267,13 +267,16 @@ def _trim_signal(s: dict) -> dict:
     }
 
 
+_last_market_signal_price = None
+
 def generate_market_signal(market) -> Optional[Signal]:
-    """Generate a structured signal from the current market state."""
+    """
+    Generate a signal from the current market state.
+    Only fires on actual price CHANGES (≥2pp from last signal), not static mismatches.
+    """
+    global _last_market_signal_price
     if not market:
         return None
-
-    weights = tracker.load_weights()
-    pred = analyzermod.analyze_market(market, weights)
 
     yes_price = market.yes_price
     prev_state = get_command_state()
@@ -284,23 +287,27 @@ def generate_market_signal(market) -> Optional[Signal]:
     else:
         price_change = 0
 
+    # Only generate if price actually moved ≥2pp from the LAST SIGNAL we generated
+    if _last_market_signal_price is not None:
+        delta_from_last = abs(yes_price - _last_market_signal_price)
+        if delta_from_last < 0.02:
+            return None  # price hasn't moved enough since last signal
+
     if abs(price_change) >= 2:
         direction = "bullish" if price_change > 0 else "bearish"
-        importance = min(95, int(abs(price_change) * 15))
+        importance = min(95, int(abs(price_change) * 12))
         confidence = 85
         headline = f"Price moved {price_change:+.1f}pp to {yes_price:.1%} YES"
-    elif pred.predicted_yes_prob > yes_price + 0.03:
-        direction = "bullish"
-        importance = 55
-        confidence = int(pred.confidence * 100)
-        headline = f"Model above market: {pred.predicted_yes_prob:.1%} vs {yes_price:.1%}"
-    elif pred.predicted_yes_prob < yes_price - 0.03:
-        direction = "bearish"
-        importance = 55
-        confidence = int(pred.confidence * 100)
-        headline = f"Model below market: {pred.predicted_yes_prob:.1%} vs {yes_price:.1%}"
+    elif abs(price_change) >= 1:
+        # Smaller moves: lower importance
+        direction = "bullish" if price_change > 0 else "bearish"
+        importance = min(65, int(abs(price_change) * 20 + 30))
+        confidence = 70
+        headline = f"Price shift {price_change:+.1f}pp to {yes_price:.1%} YES"
     else:
-        return None  # No interesting signal
+        return None  # No meaningful price change
+
+    _last_market_signal_price = yes_price
 
     return Signal(
         source_app="market",
