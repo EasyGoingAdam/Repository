@@ -1003,6 +1003,41 @@
 <!-- ═══════════════════════════════════════════════ MAIN ═══════ -->
 <div class="container">
 
+  <!-- ═══ SITUATION BANNER — The #1 thing you see ═══ -->
+  <div id="situationBanner" style="
+    background: linear-gradient(135deg, var(--surface2), var(--surface));
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 18px;
+    position: relative;
+    overflow: hidden;
+    transition: all .4s ease;
+  ">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span id="sitStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0;animation:livePulse 2s infinite"></span>
+          <span id="sitStatusLabel" style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--green)">ALL QUIET</span>
+          <span id="sitTimeAgo" style="font-size:11px;color:var(--muted);margin-left:auto"></span>
+        </div>
+        <div id="sitHeadline" style="font-size:18px;font-weight:700;line-height:1.4;color:var(--text);margin-bottom:8px">
+          No breaking developments detected. Monitoring 56+ sources.
+        </div>
+        <div id="sitDetail" style="font-size:12px;color:var(--muted2);line-height:1.6">
+          Pulse, Beacon, and OrderFlow are scanning for changes. You will hear an alert if something breaks.
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div id="sitAlertLevel" style="font-size:32px;font-weight:800;letter-spacing:-.02em;color:var(--muted)">CLEAR</div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:2px">SITUATION STATUS</div>
+      </div>
+    </div>
+    <!-- Latest signals ticker -->
+    <div id="sitTicker" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;gap:14px;overflow-x:auto;scrollbar-width:none">
+    </div>
+  </div>
+
   <!-- SITUATION OVERVIEW — 6 stat chips -->
   <div class="stat-chips" id="statChips">
     <div class="chip" id="chipYes">
@@ -2039,8 +2074,126 @@ async function subscribeEmail() {
 }
 
 // ═══════════════════════════════════ REFRESH ALL ══
+// ── SITUATION BANNER — the #1 thing on screen ─────────────────────────────
+async function updateSituationBanner() {
+  try {
+    const [cmdResp, sigResp, statusResp] = await Promise.all([
+      fetch('/api/command/state').then(r=>r.json()).catch(()=>null),
+      fetch('/api/command/signals?hours=2&limit=10').then(r=>r.json()).catch(()=>({signals:[]})),
+      fetch('/api/command/status').then(r=>r.json()).catch(()=>null),
+    ]);
+
+    const banner = document.getElementById('situationBanner');
+    const dot = document.getElementById('sitStatusDot');
+    const label = document.getElementById('sitStatusLabel');
+    const headline = document.getElementById('sitHeadline');
+    const detail = document.getElementById('sitDetail');
+    const alertEl = document.getElementById('sitAlertLevel');
+    const timeAgo = document.getElementById('sitTimeAgo');
+    const ticker = document.getElementById('sitTicker');
+
+    const sigs = sigResp.signals || [];
+    const alert = cmdResp ? cmdResp.alert_level : 'NO_ACTION';
+    const reason = cmdResp ? cmdResp.reason_summary : '';
+
+    // Find highest-importance signal in last 2 hours
+    const topSig = sigs.length ? sigs.reduce((a,b) => (b.importance_score||0) > (a.importance_score||0) ? b : a) : null;
+    const pulseSigs = sigs.filter(s => s.source_app === 'pulse');
+    const beaconSigs = sigs.filter(s => s.source_app === 'beacon');
+
+    // Status counts
+    const pCount = statusResp ? (statusResp.signal_counts_1h?.pulse || 0) : 0;
+    const bCount = statusResp ? (statusResp.signal_counts_1h?.beacon || 0) : 0;
+
+    if (alert === 'URGENT') {
+      banner.style.borderColor = 'rgba(244,63,94,.5)';
+      banner.style.background = 'linear-gradient(135deg, rgba(244,63,94,.12), var(--surface))';
+      banner.style.boxShadow = '0 0 30px rgba(244,63,94,.1)';
+      dot.style.background = 'var(--red)';
+      label.style.color = 'var(--red)';
+      label.textContent = 'URGENT — BREAKING DEVELOPMENT';
+      alertEl.textContent = 'URGENT';
+      alertEl.style.color = 'var(--red)';
+    } else if (alert === 'IMPORTANT') {
+      banner.style.borderColor = 'rgba(245,158,11,.4)';
+      banner.style.background = 'linear-gradient(135deg, rgba(245,158,11,.08), var(--surface))';
+      banner.style.boxShadow = '0 0 20px rgba(245,158,11,.06)';
+      dot.style.background = 'var(--amber)';
+      label.style.color = 'var(--amber)';
+      label.textContent = 'IMPORTANT — NOTABLE ACTIVITY';
+      alertEl.textContent = 'WATCH';
+      alertEl.style.color = 'var(--amber)';
+    } else if (alert === 'DIGEST') {
+      banner.style.borderColor = 'rgba(59,130,246,.3)';
+      banner.style.background = 'linear-gradient(135deg, rgba(59,130,246,.06), var(--surface))';
+      banner.style.boxShadow = 'none';
+      dot.style.background = 'var(--blue)';
+      label.style.color = 'var(--blue)';
+      label.textContent = 'MONITORING — LOW-LEVEL SIGNALS';
+      alertEl.textContent = 'MONITOR';
+      alertEl.style.color = 'var(--blue)';
+    } else {
+      banner.style.borderColor = 'var(--border2)';
+      banner.style.background = 'linear-gradient(135deg, var(--surface2), var(--surface))';
+      banner.style.boxShadow = 'none';
+      dot.style.background = 'var(--green)';
+      label.style.color = 'var(--green)';
+      label.textContent = 'ALL QUIET — NO SIGNIFICANT ACTIVITY';
+      alertEl.textContent = 'CLEAR';
+      alertEl.style.color = 'var(--muted)';
+    }
+
+    // Headline: show the top signal or a status message
+    if (topSig && topSig.importance_score >= 60) {
+      headline.textContent = topSig.headline;
+      headline.style.color = topSig.signal_direction === 'bullish' ? '#34d399' : topSig.signal_direction === 'bearish' ? '#fb7185' : 'var(--text)';
+    } else if (reason && reason !== 'No significant signals in past 24h') {
+      headline.textContent = reason;
+      headline.style.color = 'var(--text)';
+    } else {
+      headline.textContent = 'No breaking developments detected. All sources monitoring.';
+      headline.style.color = 'var(--muted2)';
+    }
+
+    // Detail line
+    const parts = [];
+    if (pCount > 0) parts.push(pCount + ' tweets scanned');
+    if (bCount > 0) parts.push(bCount + ' news articles');
+    if (sigs.length > 0) parts.push(sigs.length + ' signals in 2h');
+    detail.textContent = parts.length ? parts.join(' · ') : 'Waiting for intelligence cycle...';
+
+    // Time ago
+    if (cmdResp && cmdResp.updated_at) {
+      const updated = new Date(cmdResp.updated_at);
+      const ago = Math.floor((Date.now() - updated.getTime()) / 1000);
+      if (ago < 60) timeAgo.textContent = ago + 's ago';
+      else if (ago < 3600) timeAgo.textContent = Math.floor(ago/60) + 'm ago';
+      else timeAgo.textContent = Math.floor(ago/3600) + 'h ago';
+    }
+
+    // Ticker: show latest 6 signals as scrolling chips
+    const tickerSigs = sigs.slice(0, 6);
+    ticker.innerHTML = tickerSigs.map(s => {
+      const dirColor = s.signal_direction === 'bullish' ? 'var(--green)' : s.signal_direction === 'bearish' ? 'var(--red)' : 'var(--muted)';
+      const srcColors = {pulse:'var(--purple)',beacon:'var(--blue)',market:'var(--amber)',orderflow:'var(--green)'};
+      const srcColor = srcColors[s.source_app] || 'var(--muted)';
+      const arrow = s.signal_direction === 'bullish' ? '\u25b2' : s.signal_direction === 'bearish' ? '\u25bc' : '\u25cf';
+      return '<div style="flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;min-width:220px;max-width:320px">'
+        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+        + '<span style="font-size:10px;color:'+dirColor+'">'+arrow+'</span>'
+        + '<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:'+srcColor+'">'+s.source_app+'</span>'
+        + '<span style="font-size:9px;color:var(--muted);margin-left:auto">imp:'+s.importance_score+'</span>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(s.headline||'').substring(0,80)+'</div>'
+        + '</div>';
+    }).join('');
+
+  } catch(e) { console.error('situationBanner', e); }
+}
+
 async function refreshAll() {
   try {
+    await updateSituationBanner();
     // Load vol first so Bollinger bands are ready for chart
     await loadVol();
     await Promise.all([
@@ -2068,16 +2221,17 @@ setInterval(refreshAll, 15000);
         const d = JSON.parse(e.data);
         if (d.type === 'connected') return;
 
-        // BREAKING / ALERT — show banner + sound
+        // BREAKING / ALERT — show banner + sound + update situation
         if (d.type === 'breaking' || (d.type === 'command' && d.alert_level === 'URGENT')) {
           showBreakingBanner(d);
+          updateSituationBanner();  // refresh situation banner immediately
         }
 
         // Any new signal — flash the feed and refresh
         if (d.type === 'signal' || d.type === 'breaking') {
           flashNewSignal(d);
-          // Refresh signal feed immediately
           fetchAndUpdate();
+          updateSituationBanner();  // keep situation current
         }
 
         // Command state change — refresh dashboard
