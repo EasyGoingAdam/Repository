@@ -19,12 +19,29 @@ from intelligence.signals import (
 def compute_volatility(market_id: str, window_minutes: int = 360) -> dict:
     """
     Compute volatility metrics for a market over the given time window.
-    Requires at least 10 data points. Returns metric dict or None.
+    Uses ALL available price history within the window (including backfill data).
+    Requires at least 5 data points. Returns metric dict or None.
     """
-    hours = window_minutes / 60
-    snapshots = get_price_snapshots(market_id, hours=max(int(hours) + 1, 24))
+    # Convert window to hours, with generous padding to capture backfill data
+    hours = max(window_minutes / 60, 1)
+    # For the actual query, use the window size (or at minimum 7 days to get backfill)
+    query_hours = max(int(hours) + 1, 168)  # at least 7 days
+    snapshots = get_price_snapshots(market_id, hours=query_hours, limit=5000)
 
-    prices = [s["yes_price"] for s in snapshots if s.get("yes_price") is not None]
+    if not snapshots:
+        return None
+
+    # Filter to only snapshots within the actual window
+    # Use all data if window is large enough, otherwise trim to window
+    now_ts = snapshots[-1]["unix_ts"]  # latest snapshot timestamp
+    window_seconds = window_minutes * 60
+    windowed = [s for s in snapshots if (now_ts - s["unix_ts"]) <= window_seconds]
+
+    # If windowed data is too small, use all available data
+    if len(windowed) < 5 and len(snapshots) >= 5:
+        windowed = snapshots
+
+    prices = [s["yes_price"] for s in windowed if s.get("yes_price") is not None]
 
     if len(prices) < 5:
         return None
@@ -34,7 +51,7 @@ def compute_volatility(market_id: str, window_minutes: int = 360) -> dict:
     std_dev = statistics.stdev(prices) if len(prices) > 1 else 0.0
 
     bollinger_upper = mean_price + 2 * std_dev
-    bollinger_lower = mean_price - 2 * std_dev
+    bollinger_lower = max(0.0, mean_price - 2 * std_dev)  # price can't go below 0
 
     z_score = (current_price - mean_price) / std_dev if std_dev > 0.001 else 0.0
 

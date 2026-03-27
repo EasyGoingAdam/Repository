@@ -1722,45 +1722,6 @@ def api_viewers():
     return {"viewers": active}
 
 
-# ── Tournament API ────────────────────────────────────────────────────────────
-
-@app.get("/api/tournament/run")
-def api_tournament_run():
-    from engines.tournament import run_tournament
-    result = run_tournament()
-    return result
-
-
-@app.get("/api/tournament/leaderboard")
-def api_tournament_leaderboard():
-    from engines.tournament import get_leaderboard
-    return {"leaderboard": get_leaderboard()}
-
-
-@app.get("/api/tournament/resolve")
-def api_tournament_resolve():
-    from engines.tournament import resolve_tournament
-    return resolve_tournament()
-
-
-@app.get("/api/tournament/engine/{name}")
-def api_tournament_engine(name: str):
-    from engines.tournament import get_engine_detail
-    return get_engine_detail(name)
-
-
-@app.get("/api/tournament/markets")
-def api_tournament_markets():
-    from engines.markets import get_tournament_markets
-    return {"markets": get_tournament_markets()}
-
-
-@app.get("/api/tournament/summary")
-def api_tournament_summary():
-    from engines.tournament import get_tournament_summary
-    return get_tournament_summary()
-
-
 # ── Pages ─────────────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -1921,12 +1882,6 @@ def multi_market_dashboard():
     """Multi-market dashboard has been removed from the app — redirect to main dashboard."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/", status_code=302)
-
-
-@app.get("/tournament", response_class=HTMLResponse)
-def tournament_dashboard():
-    with open(Path(__file__).parent / "static" / "tournament.html") as f:
-        return f.read()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

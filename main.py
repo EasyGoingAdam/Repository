@@ -491,127 +491,6 @@ def cmd_signal_report():
             print(f"      Signals: {data['count']}  |  Win: {data['win_rate']:.0%}  |  P&L: {data['total_pl']:+.4f}")
 
 
-def cmd_tournament():
-    """Run the 5-engine betting tournament."""
-    from engines.tournament import run_tournament, get_leaderboard
-    init_db()
-    print("\n  5-ENGINE BETTING TOURNAMENT")
-    print("  Each engine gets $1,000 to bet on ~20 markets near 50/50")
-    _separator("═")
-
-    result = run_tournament()
-
-    print(f"\n  Tournament complete!")
-    print(f"  Markets: {result['markets']}  |  Engines: {result['engines']}  |  Total bets: {result['total_bets']}")
-    _separator()
-
-    # Show leaderboard
-    print("\n  INITIAL LEADERBOARD (pre-resolution)")
-    _separator()
-    leaderboard = get_leaderboard()
-    for eng in leaderboard:
-        name = eng["engine_name"].upper()
-        bets = eng["total_bets"]
-        bal = eng["current_balance"]
-        print(f"  #{eng['rank']}  {name:<22} | Bets: {bets:>2} | Balance: ${bal:>8,.2f}")
-        print(f"       {eng['strategy_summary'][:70]}")
-
-    print(f"\n  Run 'tournament-resolve' later to check outcomes and update P&L.")
-    print(f"  Run 'leaderboard' to see current standings.")
-
-
-def cmd_leaderboard():
-    """Show tournament leaderboard."""
-    from engines.tournament import get_leaderboard, get_tournament_markets
-    init_db()
-    print("\n  TOURNAMENT LEADERBOARD")
-    _separator("═")
-
-    leaderboard = get_leaderboard()
-    if not leaderboard:
-        print("  No tournament running. Run 'tournament' first.")
-        return
-
-    markets = get_tournament_markets()
-    resolved = sum(1 for m in markets if m.get("resolved"))
-
-    print(f"  Markets: {len(markets)} total, {resolved} resolved, {len(markets) - resolved} pending\n")
-
-    for eng in leaderboard:
-        name = eng["engine_name"].upper()
-        bal = eng["current_balance"]
-        pl = bal - 1000
-        wins = eng["wins"]
-        losses = eng["losses"]
-        roi = eng["roi"]
-        total = eng["total_bets"]
-
-        pl_color = "+" if pl >= 0 else ""
-        result_str = f"W:{wins} L:{losses}" if (wins + losses) > 0 else "pending"
-
-        print(f"  #{eng['rank']}  {name:<22} | ${bal:>8,.2f} | {pl_color}${pl:>8,.2f} | ROI: {roi:>+6.1f}% | {result_str} | {total} bets")
-
-    print()
-    _separator()
-    if resolved < len(markets):
-        print(f"  {len(markets) - resolved} markets still pending. Run 'tournament-resolve' to check.")
-    else:
-        print(f"  All markets resolved! Winner: {leaderboard[0]['engine_name'].upper()}")
-
-
-def cmd_tournament_resolve():
-    """Resolve tournament bets."""
-    from engines.tournament import resolve_tournament, get_leaderboard
-    init_db()
-    print("\n  Resolving tournament bets...")
-    _separator()
-    result = resolve_tournament()
-    print(f"  Resolved: {result['resolved']}  |  Pending: {result['pending']}")
-
-    if result['resolved'] > 0:
-        print("\n  Updated leaderboard:")
-        _separator()
-        for eng in get_leaderboard():
-            bal = eng["current_balance"]
-            pl = bal - 1000
-            print(f"  #{eng['rank']}  {eng['engine_name'].upper():<22} | ${bal:>8,.2f} | P&L: {'+' if pl >= 0 else ''}${pl:,.2f}")
-
-
-def cmd_engine_detail(args):
-    """Show details for one engine."""
-    from engines.tournament import get_engine_detail
-    init_db()
-    if not args:
-        print("  Usage: engine <name>")
-        print("  Names: contrarian, momentum, volatility_vulture, fundamentalist, kelly")
-        return
-
-    name = args[0].lower()
-    detail = get_engine_detail(name)
-
-    if not detail["engine"]:
-        print(f"  Engine '{name}' not found.")
-        return
-
-    eng = detail["engine"]
-    print(f"\n  ENGINE: {eng['engine_name'].upper()}")
-    print(f"  Strategy: {eng['strategy_summary']}")
-    _separator()
-    print(f"  Balance: ${eng['current_balance']:,.2f}  |  ROI: {eng['roi']:+.1f}%  |  W:{eng['wins']} L:{eng['losses']}")
-    _separator()
-
-    print(f"\n  Bets ({len(detail['bets'])}):")
-    for b in detail["bets"]:
-        status = ""
-        if b["resolved"]:
-            pl = b["profit_loss"] or 0
-            status = f"  =>  {b['outcome']}  P&L: {'+'if pl>0 else ''}${pl:,.2f}"
-        else:
-            status = "  [pending]"
-
-        print(f"    {b['side']:>3} ${b['amount']:>7,.2f} @ {b['entry_price']:.2f}  {b['market_question'][:50]}{status}")
-
-
 def _z_label(z):
     if z > 2.0: return "(STRONG SELL)"
     elif z > 1.5: return "(SELL)"
@@ -666,11 +545,6 @@ COMMANDS = {
     "opps": lambda args: cmd_opportunities(),  # alias
     "signals": lambda args: cmd_signals(),
     "signal-report": lambda args: cmd_signal_report(),
-    # Tournament
-    "tournament": lambda args: cmd_tournament(),
-    "leaderboard": lambda args: cmd_leaderboard(),
-    "tournament-resolve": lambda args: cmd_tournament_resolve(),
-    "engine": lambda args: cmd_engine_detail(args),
 }
 
 if __name__ == "__main__":
