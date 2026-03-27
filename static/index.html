@@ -1978,7 +1978,7 @@ async function loadPosition() {
   }
 
   fetchAndUpdate();
-  setInterval(fetchAndUpdate, 30000);
+  setInterval(fetchAndUpdate, 10000);  // 10s signal feed refresh (was 30s)
   startAutoScroll();
 })();
 
@@ -2033,9 +2033,102 @@ async function refreshAll() {
   } catch(e) { console.error('refreshAll', e); }
 }
 
-// Initial load + 30s auto-refresh
+// Initial load + 15s auto-refresh (was 30s)
 refreshAll();
-setInterval(refreshAll, 30000);
+setInterval(refreshAll, 15000);
+
+// ── SSE: Real-time signal stream ──────────────────────────────────────────
+(function() {
+  let reconnectDelay = 1000;
+  function connectSSE() {
+    const es = new EventSource('/api/stream');
+    es.onopen = () => { reconnectDelay = 1000; console.log('[SSE] Connected'); };
+    es.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.type === 'connected') return;
+
+        // BREAKING / ALERT — show banner + sound
+        if (d.type === 'breaking' || (d.type === 'command' && d.alert_level === 'URGENT')) {
+          showBreakingBanner(d);
+        }
+
+        // Any new signal — flash the feed and refresh
+        if (d.type === 'signal' || d.type === 'breaking') {
+          flashNewSignal(d);
+          // Refresh signal feed immediately
+          fetchAndUpdate();
+        }
+
+        // Command state change — refresh dashboard
+        if (d.type === 'command') {
+          refreshAll();
+        }
+      } catch(err) { console.error('[SSE] Parse error', err); }
+    };
+    es.onerror = () => {
+      es.close();
+      setTimeout(connectSSE, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    };
+  }
+  connectSSE();
+})();
+
+// ── BREAKING alert banner ─────────────────────────────────────────────────
+(function() {
+  // Create the banner element
+  const banner = document.createElement('div');
+  banner.id = 'breakingBanner';
+  banner.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#b91c1c;color:#fff;padding:12px 24px;font-size:15px;font-weight:700;text-align:center;animation:breakFlash 0.5s ease-in-out 3;cursor:pointer;box-shadow:0 4px 20px rgba(185,28,28,0.5)';
+  banner.onclick = () => { banner.style.display = 'none'; };
+  document.body.prepend(banner);
+
+  // Add flash animation
+  const style = document.createElement('style');
+  style.textContent = '@keyframes breakFlash{0%,100%{opacity:1;background:#b91c1c}50%{opacity:0.7;background:#dc2626}}';
+  document.head.appendChild(style);
+
+  // Audio alert using Web Audio API (no external file needed)
+  let audioCtx;
+  function playAlertSound() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // Three-tone alert: ascending beeps
+      [440, 554, 659].forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = freq;
+        osc.type = 'square';
+        gain.gain.value = 0.15;
+        osc.start(audioCtx.currentTime + i * 0.15);
+        osc.stop(audioCtx.currentTime + i * 0.15 + 0.12);
+      });
+    } catch(e) {}
+  }
+
+  window.showBreakingBanner = function(data) {
+    const tier = data.tier || data.alert_level || 'ALERT';
+    const headline = data.headline || data.reason || 'Breaking development detected';
+    const user = data.username ? ' @' + data.username : '';
+    banner.textContent = '\u26a0\ufe0f ' + tier + user + ': ' + headline;
+    banner.style.display = 'block';
+    playAlertSound();
+    // Auto-hide after 30 seconds
+    setTimeout(() => { banner.style.display = 'none'; }, 30000);
+  };
+})();
+
+// ── Flash animation for new signals in feed ───────────────────────────────
+window.flashNewSignal = function(data) {
+  const feed = document.querySelector('.feed-scroll');
+  if (!feed) return;
+  // Brief highlight on the feed container
+  feed.style.boxShadow = '0 0 15px rgba(59,130,246,0.5)';
+  setTimeout(() => { feed.style.boxShadow = ''; }, 1500);
+};
 </script>
 <script src="/static/health.js"></script>
 </body>

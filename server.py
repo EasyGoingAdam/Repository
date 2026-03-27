@@ -56,6 +56,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── SSE: Real-time signal broadcast ──────────────────────────────────────────
+import json as _json
+import queue
+_sse_clients: list[queue.Queue] = []
+
+def broadcast_signal(signal_data: dict):
+    """Push a signal to all connected SSE clients."""
+    dead = []
+    for q in _sse_clients:
+        try:
+            q.put_nowait(signal_data)
+        except queue.Full:
+            dead.append(q)
+    for q in dead:
+        try: _sse_clients.remove(q)
+        except: pass
+
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -103,12 +120,13 @@ def _intel_loop():
             if signals:
                 print(f"[Intel] Generated {len(signals)} trading signal(s)")
 
-            # ── Legacy Iran market intelligence (keep existing) ──
+            # ── Iran market intelligence ──
             market = polyapi.find_iran_boots_market()
             if market:
                 ms = generate_market_signal(market)
                 if ms:
                     store_signal(ms)
+                    broadcast_signal({"type": "signal", "source": "market", "headline": ms.headline, "direction": ms.signal_direction, "importance": ms.importance_score})
                 if market.clob_token_ids:
                     depth = polyapi.get_orderbook_depth(market.clob_token_ids[0])
                     if depth:
@@ -116,6 +134,7 @@ def _intel_loop():
                         ofs = generate_orderflow_signal(market)
                         if ofs:
                             store_signal(ofs)
+                            broadcast_signal({"type": "signal", "source": "orderflow", "headline": ofs.headline, "direction": ofs.signal_direction, "importance": ofs.importance_score})
 
             # ── Every 10 minutes (cycle % 5 == 0): evaluate signals + beacon ──
             if cycle % 5 == 0:
@@ -129,8 +148,14 @@ def _intel_loop():
                 discovery.refresh_watchlist()
 
             # Twitter (Pulse) + Command every cycle
-            run_pulse_cycle()
+            pulse_signals = run_pulse_cycle()
+            if pulse_signals:
+                for ps in pulse_signals[:5]:  # broadcast top 5 new pulse signals
+                    broadcast_signal({"type": "signal", "source": "pulse", "headline": ps.headline[:120], "direction": ps.signal_direction, "importance": ps.importance_score})
             cmd_state = run_command_cycle()
+            # Broadcast command state update
+            if cmd_state:
+                broadcast_signal({"type": "command", "alert_level": cmd_state.get("alert_level"), "reason": cmd_state.get("reason_summary", "")[:200], "house_odds": cmd_state.get("house_odds"), "market_odds": cmd_state.get("market_odds")})
 
             # ── Pulse Breaking News Alerts ────────────────────────────────────
             try:
@@ -148,6 +173,7 @@ def _intel_loop():
                         mark_signal_alerted(sig_id)
 
                         print(f"[Intel] Pulse {tier} alert fired — @{alert.get('username')} imp={alert.get('importance')}")
+                        broadcast_signal({"type": "breaking", "tier": tier, "username": alert.get("username"), "headline": alert.get("tweet_text", "")[:150], "importance": alert.get("importance")})
 
                         # For BREAKING tier, also send legacy send_alert_email for belt-and-suspenders
                         if tier == "BREAKING":
@@ -185,7 +211,7 @@ def _intel_loop():
         _intel_loop_last_cycle = datetime.now(timezone.utc)
 
         cycle += 1
-        time.sleep(120)  # 2 minute base interval
+        time.sleep(60)  # 1 minute base interval (was 2 min)
 
 
 # ── Existing Market API ───────────────────────────────────────────────────────
@@ -1877,6 +1903,38 @@ def multi_market_dashboard():
     """Multi-market dashboard has been removed from the app — redirect to main dashboard."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/", status_code=302)
+
+
+# ── SSE Stream Endpoint ──────────────────────────────────────────────────────
+
+from starlette.responses import StreamingResponse
+
+@app.get("/api/stream")
+def sse_stream():
+    """Server-Sent Events stream. Pushes new signals in real-time."""
+    q = queue.Queue(maxsize=100)
+    _sse_clients.append(q)
+
+    def event_generator():
+        try:
+            yield "data: {\"type\":\"connected\"}\n\n"
+            while True:
+                try:
+                    data = q.get(timeout=30)
+                    yield f"data: {_json.dumps(data)}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"  # prevent timeout
+        except GeneratorExit:
+            pass
+        finally:
+            try: _sse_clients.remove(q)
+            except: pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
