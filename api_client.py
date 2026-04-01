@@ -118,6 +118,40 @@ async def fetch_price_history(token_id: str, interval: str = "max", fidelity: in
         return []
 
 
+async def fetch_orderbook_raw(token_id: str) -> Dict:
+    """Fetch raw orderbook levels for depth chart visualization."""
+    try:
+        raw = await _get(f"{CLOB_BASE}/book", params={"token_id": token_id})
+        if not raw:
+            return {"bids": [], "asks": []}
+        bids = []
+        for lvl in raw.get("bids", []):
+            try:
+                bids.append({"price": float(lvl.get("price", 0)), "size": float(lvl.get("size", 0))})
+            except (ValueError, TypeError):
+                continue
+        asks = []
+        for lvl in raw.get("asks", []):
+            try:
+                asks.append({"price": float(lvl.get("price", 0)), "size": float(lvl.get("size", 0))})
+            except (ValueError, TypeError):
+                continue
+        bids.sort(key=lambda x: x["price"], reverse=True)
+        asks.sort(key=lambda x: x["price"])
+        # Add cumulative sizes
+        cum = 0
+        for b in bids:
+            cum += b["size"]
+            b["cumulative"] = round(cum, 2)
+        cum = 0
+        for a in asks:
+            cum += a["size"]
+            a["cumulative"] = round(cum, 2)
+        return {"bids": bids, "asks": asks}
+    except Exception:
+        return {"bids": [], "asks": []}
+
+
 async def fetch_orderbook(token_id: str) -> Dict:
     """Fetch order book and compute depth metrics."""
     try:

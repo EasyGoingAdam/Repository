@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional, Dict, List
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,15 +36,37 @@ yes_token_id: Optional[str] = None
 market_info: Dict = {}
 latest_state: Dict = {}
 latest_risk: Dict = {}
+latest_orderbook_raw: Dict = {}
 poll_count: int = 0
 poll_errors: int = 0
 poll_successes: int = 0
 last_poll_error: Optional[str] = None
 app_start_time: float = 0.0
 
+# Alert history (in-memory ring buffer)
+alert_history: List[Dict] = []
+MAX_ALERTS = 200
+
+# Breakout tracking
+last_breakout_ts: float = 0.0
+BREAKOUT_COOLDOWN = 600  # 10 min between breakout alerts
+
 # Thread-safe SSE client list
 _sse_lock = asyncio.Lock()
 sse_clients: List[asyncio.Queue] = []
+
+# Runtime settings (mutable via API)
+runtime_settings: Dict = {
+    "poll_interval": POLL_INTERVAL_SECONDS,
+    "composite_threshold": 0.4,
+    "confidence_floor": 0.45,
+    "cooldown_seconds": 300,
+    "bollinger_std": 1.0,
+    "rsi_period": 14,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+}
 
 
 async def broadcast(payload: dict):
@@ -67,6 +89,22 @@ async def broadcast(payload: dict):
                 sse_clients.remove(q)
             except ValueError:
                 pass
+
+
+def add_alert(alert_type: str, message: str, data: dict = None):
+    """Add an alert to the in-memory history."""
+    global alert_history
+    alert = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "unix_ts": datetime.now(timezone.utc).timestamp(),
+        "type": alert_type,
+        "message": message,
+        "data": data or {},
+    }
+    alert_history.append(alert)
+    if len(alert_history) > MAX_ALERTS:
+        alert_history = alert_history[-MAX_ALERTS:]
+    return alert
 
 
 async def backfill_history():
@@ -99,15 +137,46 @@ async def backfill_history():
         print(f"[Backfill] Error: {e}")
 
 
+def check_breakout(prices: list, sr: dict, current_price: float) -> Optional[Dict]:
+    """Check if price broke through support/resistance levels."""
+    global last_breakout_ts
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if now_ts - last_breakout_ts < BREAKOUT_COOLDOWN:
+        return None
+
+    for level in sr.get("resistance", []):
+        if current_price > level and len(prices) >= 2 and prices[-2] <= level:
+            last_breakout_ts = now_ts
+            return {"type": "resistance_break", "level": level, "price": current_price,
+                    "direction": "up", "message": f"Price broke above resistance at {level*100:.1f}c"}
+
+    for level in sr.get("support", []):
+        if current_price < level and len(prices) >= 2 and prices[-2] >= level:
+            last_breakout_ts = now_ts
+            return {"type": "support_break", "level": level, "price": current_price,
+                    "direction": "down", "message": f"Price broke below support at {level*100:.1f}c"}
+
+    return None
+
+
 async def poll_loop():
     """Main polling loop. Never crashes — catches all exceptions and continues."""
-    global latest_state, latest_risk, poll_count, poll_errors, poll_successes, last_poll_error
+    global latest_state, latest_risk, latest_orderbook_raw
+    global poll_count, poll_errors, poll_successes, last_poll_error
 
     while True:
         try:
             # Fetch current data (both can return {} on failure)
             ob = await api_client.fetch_orderbook(yes_token_id) or {}
             mkt = await api_client.fetch_market(MARKET_ID) or {}
+
+            # Store raw orderbook for depth chart
+            try:
+                raw_book = await api_client.fetch_orderbook_raw(yes_token_id)
+                if raw_book:
+                    latest_orderbook_raw = raw_book
+            except Exception:
+                pass
 
             # Determine current price — need at least one source
             current_price = None
@@ -181,6 +250,8 @@ async def poll_loop():
                     await asyncio.to_thread(db.store_composite_signal, comp_signal)
                     print(f"[Signal] {comp_signal['signal_type']} score={comp_signal['composite_score']:.3f} "
                           f"conf={comp_signal['confidence']:.2f} regime={regime} | {comp_signal['reasoning']}")
+                    # Add alert for signal
+                    add_alert("signal", f"{comp_signal['signal_type']} signal fired (score={comp_signal['composite_score']:.3f})", comp_signal)
             except Exception as e:
                 print(f"[Poll] Composite signal error: {e}")
 
@@ -211,6 +282,38 @@ async def poll_loop():
             except Exception:
                 sr = {"support": [], "resistance": []}
 
+            # Check for breakouts
+            breakout = None
+            try:
+                breakout = check_breakout(prices, sr, current_price)
+                if breakout:
+                    add_alert("breakout", breakout["message"], breakout)
+                    print(f"[Breakout] {breakout['message']}")
+            except Exception:
+                pass
+
+            # Check for regime change
+            prev_regime = latest_state.get("indicators", {}).get("regime")
+            if prev_regime and regime != prev_regime and prev_regime != "unknown":
+                add_alert("regime_change", f"Regime changed from {prev_regime.upper()} to {regime.upper()}", {"from": prev_regime, "to": regime})
+
+            # Price change calculations
+            price_changes = {}
+            if len(recent) >= 2:
+                price_changes["prev"] = recent[-2].get("yes_price")
+            # 1h ago (~120 snapshots at 30s interval)
+            if len(recent) >= 120:
+                price_1h = recent[-120].get("yes_price")
+                if price_1h:
+                    price_changes["1h"] = round((current_price - price_1h) / price_1h * 100, 2)
+                    price_changes["1h_price"] = price_1h
+            # 6h ago (~720 snapshots)
+            if len(recent) >= 500:
+                price_6h = recent[0].get("yes_price")
+                if price_6h:
+                    price_changes["max"] = round((current_price - price_6h) / price_6h * 100, 2)
+                    price_changes["max_price"] = price_6h
+
             latest_state = {
                 "snapshot": snapshot,
                 "bollinger": bands,
@@ -227,6 +330,9 @@ async def poll_loop():
                     "liquidity": mkt.get("liquidity"),
                 },
                 "connected_clients": len(sse_clients),
+                "price_changes": price_changes,
+                "breakout": breakout,
+                "alerts": alert_history[-5:],
             }
 
             await broadcast(latest_state)
@@ -412,6 +518,201 @@ async def api_risk_endpoint():
 async def api_composite(limit: int = 50):
     signals = await asyncio.to_thread(db.get_recent_composite_signals, limit)
     return {"signals": signals}
+
+
+# ==================== NEW ENDPOINTS ====================
+
+@app.get("/api/orderbook/depth")
+async def api_orderbook_depth():
+    """Return raw orderbook levels for depth chart."""
+    return latest_orderbook_raw or {"bids": [], "asks": []}
+
+
+@app.get("/api/alerts")
+async def api_alerts(limit: int = 50):
+    """Return recent alerts."""
+    return {"alerts": alert_history[-limit:]}
+
+
+@app.get("/api/settings")
+async def api_get_settings():
+    """Return current runtime settings."""
+    return runtime_settings
+
+
+@app.post("/api/settings")
+async def api_update_settings(request: Request):
+    """Update runtime settings."""
+    body = await request.json()
+    for key in body:
+        if key in runtime_settings:
+            runtime_settings[key] = body[key]
+    return {"ok": True, "settings": runtime_settings}
+
+
+@app.get("/api/export/snapshots")
+async def api_export_snapshots(limit: int = 500, format: str = "json"):
+    """Export price snapshots as JSON or CSV."""
+    data = await asyncio.to_thread(db.get_recent_snapshots, limit)
+    if format == "csv":
+        if not data:
+            return StreamingResponse(iter(["no data"]), media_type="text/csv")
+        headers = list(data[0].keys())
+        lines = [",".join(headers)]
+        for row in data:
+            lines.append(",".join(str(row.get(h, "")) for h in headers))
+        csv_text = "\n".join(lines)
+        return StreamingResponse(
+            iter([csv_text]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=snapshots.csv"},
+        )
+    return {"snapshots": data}
+
+
+@app.get("/api/export/signals")
+async def api_export_signals(limit: int = 200, format: str = "json"):
+    """Export composite signals as JSON or CSV."""
+    data = await asyncio.to_thread(db.get_recent_composite_signals, limit)
+    if format == "csv":
+        if not data:
+            return StreamingResponse(iter(["no data"]), media_type="text/csv")
+        headers = list(data[0].keys())
+        lines = [",".join(headers)]
+        for row in data:
+            lines.append(",".join(str(row.get(h, "")) for h in headers))
+        csv_text = "\n".join(lines)
+        return StreamingResponse(
+            iter([csv_text]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=signals.csv"},
+        )
+    return {"signals": data}
+
+
+@app.get("/api/performance")
+async def api_performance():
+    """Cumulative P&L from composite signals."""
+    signals = await asyncio.to_thread(db.get_recent_composite_signals, 200)
+    snapshots = await asyncio.to_thread(db.get_recent_snapshots, 500)
+    if not signals or not snapshots:
+        return {"performance": [], "summary": {}}
+
+    price_map = {}
+    for s in snapshots:
+        price_map[int(s["unix_ts"])] = s["yes_price"]
+
+    pnl_series = []
+    cumulative = 0.0
+    wins = 0
+    losses = 0
+    for sig in signals:
+        sig_ts = int(sig["unix_ts"])
+        entry_price = None
+        for s in snapshots:
+            if int(s["unix_ts"]) >= sig_ts:
+                entry_price = s["yes_price"]
+                break
+        if entry_price is None:
+            continue
+        # Check price 5 min later
+        exit_price = None
+        for s in snapshots:
+            if int(s["unix_ts"]) >= sig_ts + 300:
+                exit_price = s["yes_price"]
+                break
+        if exit_price is None:
+            continue
+        pnl = (exit_price - entry_price) if sig["signal_type"] == "BUY" else (entry_price - exit_price)
+        cumulative += pnl
+        if pnl > 0:
+            wins += 1
+        else:
+            losses += 1
+        pnl_series.append({
+            "unix_ts": sig_ts,
+            "signal_type": sig["signal_type"],
+            "entry": entry_price,
+            "exit": exit_price,
+            "pnl": round(pnl, 6),
+            "cumulative": round(cumulative, 6),
+        })
+
+    return {
+        "performance": pnl_series,
+        "summary": {
+            "total_trades": wins + losses,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(wins / (wins + losses), 4) if (wins + losses) > 0 else 0,
+            "cumulative_pnl": round(cumulative, 6),
+        },
+    }
+
+
+@app.get("/api/related-markets")
+async def api_related_markets():
+    """Fetch related Polymarket markets."""
+    try:
+        session = await api_client.get_session()
+        async with session.get(
+            f"{api_client.GAMMA_BASE}/markets",
+            params={"limit": 10, "active": True, "order": "volume24hr", "ascending": False,
+                    "tag": "politics"},
+        ) as resp:
+            if resp.status >= 400:
+                return {"markets": []}
+            data = await resp.json()
+            markets = []
+            for m in (data if isinstance(data, list) else []):
+                outcome_prices = []
+                raw_prices = m.get("outcomePrices")
+                if raw_prices:
+                    if isinstance(raw_prices, str):
+                        try:
+                            outcome_prices = [float(p) for p in json.loads(raw_prices)]
+                        except Exception:
+                            pass
+                    elif isinstance(raw_prices, list):
+                        outcome_prices = [float(p) for p in raw_prices]
+                markets.append({
+                    "id": str(m.get("id", "")),
+                    "question": m.get("question", ""),
+                    "yes_price": outcome_prices[0] if outcome_prices else None,
+                    "volume_24hr": float(m.get("volume24hr", 0) or 0),
+                    "liquidity": float(m.get("liquidityNum", 0) or 0),
+                })
+            return {"markets": markets[:10]}
+    except Exception as e:
+        print(f"[API] Related markets error: {e}")
+        return {"markets": []}
+
+
+@app.get("/api/signal-replay/{signal_id}")
+async def api_signal_replay(signal_id: int):
+    """Get market context around a specific signal for replay."""
+    signals = await asyncio.to_thread(db.get_recent_composite_signals, 500)
+    target = None
+    for s in signals:
+        if s.get("id") == signal_id:
+            target = s
+            break
+    if not target:
+        return {"error": "Signal not found"}
+
+    sig_ts = target["unix_ts"]
+    snapshots = await asyncio.to_thread(db.get_recent_snapshots, 500)
+    # Get snapshots in a window around the signal (5 min before, 10 min after)
+    context_snaps = [s for s in snapshots if sig_ts - 300 <= s["unix_ts"] <= sig_ts + 600]
+
+    indicators_hist = await asyncio.to_thread(db.get_recent_indicator_snapshots, 500)
+    context_indicators = [i for i in indicators_hist if sig_ts - 300 <= i["unix_ts"] <= sig_ts + 600]
+
+    return {
+        "signal": target,
+        "snapshots": context_snaps,
+        "indicators": context_indicators,
+    }
 
 
 # ==================== SSE ====================
