@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket Volatility Monitor</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-dim: #8b949e;
+    --green: #3fb950; --red: #f85149; --amber: #d29922; --blue: #58a6ff; --purple: #bc8cff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; font-size: 13px; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 14px; letter-spacing: 2px; color: var(--text-dim); }
+  .header .price { font-size: 28px; font-weight: 700; }
+  .header .meta { text-align: right; font-size: 12px; color: var(--text-dim); }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  .status-dot.connected { background: var(--green); }
+  .status-dot.disconnected { background: var(--red); }
+
+  /* Tooltip system */
+  [data-tip] { position: relative; cursor: help; border-bottom: 1px dotted var(--text-dim); }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    background: #1c2128; color: var(--text); border: 1px solid var(--border);
+    padding: 8px 12px; border-radius: 6px; font-size: 11px; font-weight: 400;
+    white-space: normal; width: 280px; z-index: 1000; line-height: 1.5;
+    text-transform: none; letter-spacing: 0; pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  [data-tip]:hover::before {
+    content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(100%);
+    border: 6px solid transparent; border-top-color: #1c2128; z-index: 1001;
+  }
+
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .tab-btn { padding: 10px 20px; cursor: pointer; color: var(--text-dim); border: none; background: none; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; border-bottom: 2px solid transparent; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .signal-banner { display: none; padding: 10px 20px; font-size: 13px; font-weight: 600; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .signal-banner.buy { display: flex; background: rgba(63,185,80,0.12); color: var(--green); border-bottom: 2px solid var(--green); }
+  .signal-banner.sell { display: flex; background: rgba(248,81,73,0.12); color: var(--red); border-bottom: 2px solid var(--red); }
+  .strength-bar { height: 6px; border-radius: 3px; background: var(--border); width: 80px; display: inline-block; vertical-align: middle; }
+  .strength-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .buy .strength-fill { background: var(--green); }
+  .sell .strength-fill { background: var(--red); }
+
+  /* Recommendation panel */
+  .reco-panel { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: flex-start; }
+  .reco-verdict { min-width: 140px; text-align: center; padding: 10px 16px; border-radius: 8px; }
+  .reco-verdict .action { font-size: 20px; font-weight: 800; letter-spacing: 2px; }
+  .reco-verdict .conf-label { font-size: 10px; margin-top: 4px; opacity: 0.8; }
+  .reco-verdict.buy { background: rgba(63,185,80,0.12); color: var(--green); }
+  .reco-verdict.sell { background: rgba(248,81,73,0.12); color: var(--red); }
+  .reco-verdict.hold { background: rgba(139,148,158,0.12); color: var(--text-dim); }
+  .reco-body { flex: 1; }
+  .reco-body .reco-summary { font-size: 13px; line-height: 1.6; color: var(--text); }
+  .reco-body .reco-factors { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+  .reco-factor { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border); }
+  .reco-factor.bullish { border-color: var(--green); color: var(--green); }
+  .reco-factor.bearish { border-color: var(--red); color: var(--red); }
+  .reco-factor.neutral { border-color: var(--text-dim); color: var(--text-dim); }
+
+  .chart-container { width: 100%; height: 300px; border-bottom: 1px solid var(--border); }
+  .chart-sm { width: 100%; height: 160px; border-bottom: 1px solid var(--border); }
+
+  .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--border); border-bottom: 1px solid var(--border); }
+  .metric-card { background: var(--surface); padding: 12px 16px; }
+  .metric-card .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .metric-card .value { font-size: 20px; font-weight: 700; }
+  .metric-card .sub { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+
+  .comp-row { display: flex; align-items: center; gap: 10px; padding: 8px 20px; border-bottom: 1px solid var(--border); }
+  .comp-label { width: 120px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; }
+  .comp-bar-wrap { flex: 1; height: 14px; background: var(--surface); border-radius: 7px; position: relative; overflow: hidden; }
+  .comp-bar-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
+  .comp-bar-fill { position: absolute; top: 2px; bottom: 2px; border-radius: 5px; transition: left 0.3s, width 0.3s; }
+  .comp-val { width: 50px; text-align: right; font-weight: 600; font-size: 12px; }
+
+  .table-wrap { padding: 12px 20px; max-height: 260px; overflow-y: auto; }
+  .table-wrap h3 { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  tr.buy-row td:first-child { color: var(--green); font-weight: 600; }
+  tr.sell-row td:first-child { color: var(--red); font-weight: 600; }
+
+  .risk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); }
+  .risk-card { background: var(--surface); padding: 20px; text-align: center; }
+  .risk-card .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+  .risk-card .value { font-size: 28px; font-weight: 700; margin: 8px 0; }
+
+  .regime-badge { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 1px; }
+  .regime-badge.trending { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .regime-badge.mean_reverting { background: rgba(210,153,34,0.15); color: var(--amber); }
+  .regime-badge.unknown { background: rgba(139,148,158,0.15); color: var(--text-dim); }
+
+  .chart-label { padding: 6px 20px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; background: var(--surface); border-bottom: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><h1>IRAN VOLATILITY MONITOR</h1></div>
+  <div style="text-align:center">
+    <div class="price" data-tip="The current market price for YES shares. Represents the implied probability of US forces entering Iran by Dec 31. 75c = 75% probability." id="current-price">--</div>
+    <div style="font-size:11px;color:var(--text-dim)">YES Price</div>
+  </div>
+  <div class="meta">
+    <div><span class="status-dot disconnected" id="status-dot"></span><span id="status-text">Connecting...</span></div>
+    <div id="last-update">--</div>
+    <div style="font-size:16px;font-weight:600;color:var(--text);margin:4px 0">&#128065; <span id="viewer-count">0</span> <span style="font-size:11px;font-weight:400;color:var(--text-dim)">watching</span></div>
+    <div><span class="regime-badge unknown" data-tip="Market regime detected by ADX and Hurst exponent. TRENDING means price is moving directionally (favor momentum). MEAN REVERTING means price oscillates around a level (favor buying dips/selling rips)." id="regime-badge">--</span></div>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="indicators">Indicators</button>
+  <button class="tab-btn" data-tab="signals">Signals</button>
+  <button class="tab-btn" data-tab="risk">Risk</button>
+</div>
+
+<!-- SIGNAL BANNER -->
+<div class="signal-banner" id="signal-banner">
+  <span id="signal-type">--</span>
+  <span><span data-tip="Composite score from -1 to +1. Combines mean reversion, momentum, volatility, order flow, and volume indicators with regime-adaptive weights.">Score:</span> <strong id="signal-score">--</strong></span>
+  <span><span data-tip="Confidence level based on agreement among the 5 signal components. Higher = more components agree on direction.">Conf:</span></span><div class="strength-bar"><div class="strength-fill" id="signal-conf" style="width:0%"></div></div>
+  <span id="signal-regime">--</span>
+  <span><span data-tip="Kelly Criterion position size recommendation (half-Kelly). Suggests what % of bankroll to risk on this trade, factoring in historical win rate and edge.">Kelly:</span> <strong id="signal-kelly">--</strong></span>
+  <span id="signal-reasoning" style="color:var(--text-dim);font-weight:400">--</span>
+</div>
+
+<!-- TAB 1: OVERVIEW -->
+<div class="tab-content active" id="tab-overview">
+  <!-- Recommendation Panel -->
+  <div class="reco-panel" id="reco-panel">
+    <div class="reco-verdict hold" id="reco-verdict">
+      <div class="action" id="reco-action">HOLD</div>
+      <div class="conf-label" id="reco-conf">Waiting for data...</div>
+    </div>
+    <div class="reco-body">
+      <div class="reco-summary" id="reco-summary">Analyzing market conditions. Recommendation will appear once enough indicators are computed.</div>
+      <div class="reco-factors" id="reco-factors"></div>
+    </div>
+  </div>
+  <div class="chart-container" id="chart-main"></div>
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="label" data-tip="Where the current price sits within the Bollinger Bands (0-100%). Below 20% = near lower band (potential buy zone). Above 80% = near upper band (potential sell zone). Bollinger Bands are calculated as the 20-period moving average +/- 1 standard deviation.">Bollinger Position</div>
+      <div class="value" id="m-bb">--</div>
+      <div class="sub" id="m-bb-sub">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-tip="Relative Strength Index (14-period). Measures momentum on a 0-100 scale. Above 70 = overbought (price may be too high, consider selling). Below 30 = oversold (price may be too low, consider buying). Calculated from the ratio of average gains to average losses over 14 periods.">RSI (14)</div>
+      <div class="value" id="m-rsi">--</div>
+      <div class="sub" id="m-rsi-sub">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-tip="Moving Average Convergence Divergence histogram. Shows the difference between the MACD line (EMA12 - EMA26) and its 9-period signal line. Positive = bullish momentum (price accelerating up). Negative = bearish momentum (price accelerating down). Crossovers signal trend changes.">MACD</div>
+      <div class="value" id="m-macd">--</div>
+      <div class="sub" id="m-macd-sub">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-tip="Order book imbalance between buy and sell orders. Positive % = more buy pressure (bids outweigh asks). Negative % = more sell pressure (asks outweigh bids). Calculated as (total bid notional - total ask notional) / total notional. Large imbalances often precede price moves.">Order Book</div>
+      <div class="value" id="m-ob">--</div>
+      <div class="sub" id="m-ob-sub">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-tip="Market regime classification. ADX (Average Directional Index) measures trend strength: above 25 = trending market (follow the trend), below 25 = ranging market (buy low, sell high). Hurst exponent measures persistence: above 0.5 = trending, below 0.5 = mean-reverting.">Regime / ADX</div>
+      <div class="value" id="m-regime">--</div>
+      <div class="sub" id="m-regime-sub">--</div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 2: INDICATORS -->
+<div class="tab-content" id="tab-indicators">
+  <div class="chart-label" data-tip="Relative Strength Index. Oscillates 0-100. Measures speed and magnitude of price changes. Calculated using Wilder's smoothed average of gains vs losses over 14 periods.">RSI (14) — Overbought &gt;70, Oversold &lt;30</div>
+  <div class="chart-sm" id="chart-rsi"></div>
+  <div class="chart-label" data-tip="Moving Average Convergence Divergence. Green histogram = bullish momentum, red = bearish. Signal line (red) crossing the MACD line indicates trend reversals. Calculated as EMA(12) minus EMA(26), with a 9-period EMA signal line.">MACD — Histogram + Signal Line</div>
+  <div class="chart-sm" id="chart-macd"></div>
+  <div class="chart-label" data-tip="Stochastic Oscillator. Blue %K = fast line, red %D = slow line (3-period average of %K). Overbought above 80, oversold below 20. %K crossing above %D = bullish. Calculated from the current price position relative to the 14-period high/low range.">Stochastic Oscillator — %K / %D</div>
+  <div class="chart-sm" id="chart-stoch"></div>
+  <div class="chart-label" data-tip="Average True Range over 14 periods. Measures price volatility in absolute terms. Higher ATR = more volatile market (wider stops needed, bigger potential moves). Lower ATR = calmer market. Calculated as a smoothed average of the absolute price change between consecutive snapshots.">ATR (14) — Average True Range</div>
+  <div class="chart-sm" id="chart-atr"></div>
+</div>
+
+<!-- TAB 3: SIGNALS -->
+<div class="tab-content" id="tab-signals">
+  <div style="padding:12px 20px;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px" data-tip="Each component scores from -1 (strong sell) to +1 (strong buy). The composite signal is a weighted sum of all 5 components, adjusted by market regime. A signal fires when the composite exceeds 0.4 with confidence above 45%.">Composite Signal Components</div>
+  <div class="comp-row"><div class="comp-label" data-tip="Combines Bollinger Z-score (inverted), RSI, CCI, and Williams %R. Positive = price is below fair value (buy opportunity). Negative = price is above fair value (sell opportunity). Suppressed during strong trends to avoid fighting momentum. Weight: 20-40% depending on regime.">Mean Reversion</div><div class="comp-bar-wrap"><div class="comp-bar-center"></div><div class="comp-bar-fill" id="bar-mr"></div></div><div class="comp-val" id="val-mr">--</div></div>
+  <div class="comp-row"><div class="comp-label" data-tip="Combines MACD histogram direction, Rate of Change, and Stochastic crossover. Positive = upward momentum (price accelerating). Negative = downward momentum (price decelerating). Given more weight when market is trending (ADX > 25). Weight: 15-35% depending on regime.">Momentum</div><div class="comp-bar-wrap"><div class="comp-bar-center"></div><div class="comp-bar-fill" id="bar-mom"></div></div><div class="comp-val" id="val-mom">--</div></div>
+  <div class="comp-row"><div class="comp-label" data-tip="Assesses volatility conditions. Positive = volatility is low/contracting (favorable for entries, tighter bands). Negative = volatility is high/expanding (risky, wider price swings). Uses Vol-of-Vol, Bollinger Z-score magnitude, and Historical Volatility. Weight: 20%.">Volatility</div><div class="comp-bar-wrap"><div class="comp-bar-center"></div><div class="comp-bar-fill" id="bar-vol"></div></div><div class="comp-val" id="val-vol">--</div></div>
+  <div class="comp-row"><div class="comp-label" data-tip="Order book imbalance signal. Positive = more buy orders than sell orders (smart money accumulating). Negative = more sell orders (smart money distributing). Only activates when imbalance exceeds 15% to filter noise. Weight: 10-15%.">Order Flow</div><div class="comp-bar-wrap"><div class="comp-bar-center"></div><div class="comp-bar-fill" id="bar-of"></div></div><div class="comp-val" id="val-of">--</div></div>
+  <div class="comp-row"><div class="comp-label" data-tip="Combines On-Balance Volume (OBV) direction and Volume Rate of Change. Positive OBV = volume flows on up-moves exceed down-moves (bullish accumulation). Rising volume ROC = increasing trading activity confirms the move. Weight: 10%.">Volume</div><div class="comp-bar-wrap"><div class="comp-bar-center"></div><div class="comp-bar-fill" id="bar-v"></div></div><div class="comp-val" id="val-v">--</div></div>
+  <div class="table-wrap">
+    <h3>Composite Signal History</h3>
+    <table>
+      <thead><tr>
+        <th data-tip="BUY = price expected to rise. SELL = price expected to fall.">Signal</th>
+        <th data-tip="Weighted composite of all 5 components. Ranges from -1 to +1. Threshold: |score| > 0.4 to fire.">Score</th>
+        <th data-tip="How much the 5 components agree. Higher = more indicators aligned.">Conf</th>
+        <th data-tip="Market regime at signal time. Trending = follow momentum. Mean-reverting = buy dips.">Regime</th>
+        <th data-tip="Kelly Criterion recommended position size as % of bankroll. Uses half-Kelly for safety.">Kelly</th>
+        <th>Reasoning</th><th>Time</th>
+      </tr></thead>
+      <tbody id="comp-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TAB 4: RISK -->
+<div class="tab-content" id="tab-risk">
+  <div class="risk-grid">
+    <div class="risk-card">
+      <div class="label" data-tip="Risk-adjusted return metric. Measures excess return per unit of total risk. Above 1.0 = good. Above 2.0 = excellent. Below 0 = losing money. Calculated as (mean return - risk-free rate) / standard deviation of returns, annualized.">Sharpe Ratio</div>
+      <div class="value" id="r-sharpe">--</div>
+    </div>
+    <div class="risk-card">
+      <div class="label" data-tip="Like Sharpe but only penalizes downside volatility, not upside. Better for trading where big wins are welcome. Above 1.0 = good. Calculated as (mean return - risk-free rate) / downside deviation.">Sortino Ratio</div>
+      <div class="value" id="r-sortino">--</div>
+    </div>
+    <div class="risk-card">
+      <div class="label" data-tip="Largest peak-to-trough decline in signal P&L history. Shows worst-case loss scenario. Lower is better. 5% means at worst you'd have lost 5% of gains before recovering.">Max Drawdown</div>
+      <div class="value" id="r-dd">--</div>
+    </div>
+    <div class="risk-card">
+      <div class="label" data-tip="Value at Risk at 95% confidence. The worst loss you'd expect in 95 out of 100 trades. If VaR = -0.5c, then 95% of the time you'd lose no more than 0.5c per signal.">VaR (95%)</div>
+      <div class="value" id="r-var">--</div>
+    </div>
+  </div>
+  <div class="metrics" style="grid-template-columns:repeat(4,1fr)">
+    <div class="metric-card">
+      <div class="label" data-tip="Percentage of past signals that were profitable after 5 minutes. Above 50% means more winners than losers. Evaluated by checking if price moved in the predicted direction.">Win Rate</div>
+      <div class="value" id="r-winrate">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-tip="Average profit/loss per signal in cents. Positive = signals are profitable on average. Calculated across all evaluated signals.">Avg Profit</div>
+      <div class="value" id="r-avgprofit">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-tip="Kelly Criterion optimal bet fraction (half-Kelly applied for safety). Tells you what percentage of your bankroll to risk per trade to maximize long-term growth. Formula: f* = (b*p - q) / b where b=win/loss ratio, p=win probability.">Kelly Fraction</div>
+      <div class="value" id="r-kelly">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-tip="Total number of composite signals generated and evaluated for performance tracking.">Total Signals</div>
+      <div class="value" id="r-total">--</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <h3>Signal Performance (old Bollinger signals)</h3>
+    <table>
+      <thead><tr><th>Signal</th><th>Price</th><th data-tip="Bollinger Z-Score. How many standard deviations from the mean. Negative = below average (potential buy). Positive = above average (potential sell).">Z-Score</th><th data-tip="Signal strength from 0-100%. Based on how far price is from the Bollinger band. Stronger = more extreme deviation.">Strength</th><th data-tip="Order book imbalance at signal time. Positive = buy pressure confirmed the signal.">Imbalance</th><th>Time</th></tr></thead>
+      <tbody id="signal-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ===== TAB SWITCHING =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'indicators' && !indicatorsLoaded) loadIndicatorHistory();
+  });
+});
+
+// ===== RECOMMENDATION ENGINE =====
+function updateRecommendation(snap, ind, sig, risk) {
+  const panel = document.getElementById('reco-panel');
+  const verdict = document.getElementById('reco-verdict');
+  const action = document.getElementById('reco-action');
+  const confLabel = document.getElementById('reco-conf');
+  const summary = document.getElementById('reco-summary');
+  const factors = document.getElementById('reco-factors');
+
+  if (!snap || !ind) return;
+
+  // Gather all signals
+  const rsi = ind.rsi_14;
+  const macd = ind.macd_histogram;
+  const bbz = ind.bollinger_z;
+  const regime = ind.regime || 'unknown';
+  const adx = ind.adx;
+  const imb = snap.imbalance || 0;
+  const price = snap.yes_price;
+  const stochK = ind.stoch_k;
+  const hv = ind.historical_vol;
+
+  let bullish = 0, bearish = 0, total = 0;
+  const chips = [];
+
+  // RSI
+  if (rsi != null) {
+    total++;
+    if (rsi < 30) { bullish++; chips.push({t:'RSI Oversold ('+rsi.toFixed(0)+')',c:'bullish'}); }
+    else if (rsi > 70) { bearish++; chips.push({t:'RSI Overbought ('+rsi.toFixed(0)+')',c:'bearish'}); }
+    else chips.push({t:'RSI Neutral ('+rsi.toFixed(0)+')',c:'neutral'});
+  }
+  // MACD
+  if (macd != null) {
+    total++;
+    if (macd > 0.0001) { bullish++; chips.push({t:'MACD Bullish',c:'bullish'}); }
+    else if (macd < -0.0001) { bearish++; chips.push({t:'MACD Bearish',c:'bearish'}); }
+    else chips.push({t:'MACD Flat',c:'neutral'});
+  }
+  // Bollinger
+  if (bbz != null) {
+    total++;
+    if (bbz < -1) { bullish++; chips.push({t:'Below Bollinger Band',c:'bullish'}); }
+    else if (bbz > 1) { bearish++; chips.push({t:'Above Bollinger Band',c:'bearish'}); }
+    else chips.push({t:'Within Bands',c:'neutral'});
+  }
+  // Order Book
+  if (Math.abs(imb) > 0.1) {
+    total++;
+    if (imb > 0.1) { bullish++; chips.push({t:'Buy Pressure ('+(imb*100).toFixed(0)+'%)',c:'bullish'}); }
+    else { bearish++; chips.push({t:'Sell Pressure ('+(imb*100).toFixed(0)+'%)',c:'bearish'}); }
+  }
+  // Stochastic
+  if (stochK != null) {
+    total++;
+    if (stochK < 20) { bullish++; chips.push({t:'Stoch Oversold',c:'bullish'}); }
+    else if (stochK > 80) { bearish++; chips.push({t:'Stoch Overbought',c:'bearish'}); }
+    else chips.push({t:'Stoch Neutral',c:'neutral'});
+  }
+  // Regime
+  chips.push({t: regime === 'trending' ? 'Trending (ADX '+(adx||0).toFixed(0)+')' : 'Mean Reverting', c: 'neutral'});
+
+  // Decide recommendation
+  let rec, recClass, confidence;
+  const net = bullish - bearish;
+  if (total < 3) { rec = 'HOLD'; recClass = 'hold'; confidence = 'Insufficient data'; }
+  else if (net >= 3) { rec = 'BUY'; recClass = 'buy'; confidence = 'Strong (' + bullish + '/' + total + ' bullish)'; }
+  else if (net >= 2) { rec = 'BUY'; recClass = 'buy'; confidence = 'Moderate (' + bullish + '/' + total + ' bullish)'; }
+  else if (net <= -3) { rec = 'SELL'; recClass = 'sell'; confidence = 'Strong (' + bearish + '/' + total + ' bearish)'; }
+  else if (net <= -2) { rec = 'SELL'; recClass = 'sell'; confidence = 'Moderate (' + bearish + '/' + total + ' bearish)'; }
+  else { rec = 'HOLD'; recClass = 'hold'; confidence = 'Mixed signals (' + bullish + ' bull, ' + bearish + ' bear)'; }
+
+  // If composite signal exists, use it as tiebreaker
+  if (sig && Math.abs(sig.composite_score) > 0.3) {
+    if (sig.signal_type === 'BUY' && rec !== 'SELL') { rec = 'BUY'; recClass = 'buy'; }
+    if (sig.signal_type === 'SELL' && rec !== 'BUY') { rec = 'SELL'; recClass = 'sell'; }
+  }
+
+  action.textContent = rec;
+  verdict.className = 'reco-verdict ' + recClass;
+  confLabel.textContent = confidence;
+
+  // Build summary text
+  let text = `Price at ${(price*100).toFixed(1)}\u00a2. `;
+  if (rec === 'BUY') text += `${bullish} of ${total} indicators suggest the market is underpriced. `;
+  else if (rec === 'SELL') text += `${bearish} of ${total} indicators suggest the market is overpriced. `;
+  else text += `Indicators are mixed \u2014 no clear edge. Wait for alignment. `;
+
+  if (regime === 'trending' && adx > 30) text += `Strong trend in progress (ADX ${adx.toFixed(0)}) \u2014 favor momentum over mean reversion. `;
+  if (hv != null && hv > 2) text += `Volatility is elevated \u2014 use smaller position sizes. `;
+  if (sig && sig.reasoning) text += sig.reasoning;
+  summary.textContent = text;
+
+  // Render factor chips
+  factors.innerHTML = '';
+  for (const ch of chips) {
+    const span = document.createElement('span');
+    span.className = 'reco-factor ' + ch.c;
+    span.textContent = ch.t;
+    factors.appendChild(span);
+  }
+}
+
+// ===== CHART SETUP =====
+const chartOpts = (el) => ({
+  layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+  grid: { vertLines: { color: '#1c2128' }, horzLines: { color: '#1c2128' } },
+  crosshair: { mode: 0 }, timeScale: { timeVisible: true, secondsVisible: false },
+  rightPriceScale: { borderColor: '#30363d' }, width: el.clientWidth, height: el.clientHeight,
+});
+
+const mainEl = document.getElementById('chart-main');
+const mainChart = LightweightCharts.createChart(mainEl, chartOpts(mainEl));
+const priceSeries = mainChart.addLineSeries({ color: '#58a6ff', lineWidth: 2 });
+const upperSeries = mainChart.addLineSeries({ color: '#d29922', lineWidth: 1, lineStyle: 2 });
+const lowerSeries = mainChart.addLineSeries({ color: '#d29922', lineWidth: 1, lineStyle: 2 });
+const smaSeries = mainChart.addLineSeries({ color: '#8b949e', lineWidth: 1, lineStyle: 1 });
+const keltnerUp = mainChart.addLineSeries({ color: '#bc8cff', lineWidth: 1, lineStyle: 2 });
+const keltnerLo = mainChart.addLineSeries({ color: '#bc8cff', lineWidth: 1, lineStyle: 2 });
+let markers = [];
+
+let indicatorsLoaded = false;
+let rsiChart, rsiSeries, macdChart, macdHist, macdSig, stochChart, stochK, stochD, atrChart, atrSeries;
+
+function initIndicatorCharts() {
+  const rsiEl = document.getElementById('chart-rsi');
+  rsiChart = LightweightCharts.createChart(rsiEl, chartOpts(rsiEl));
+  rsiSeries = rsiChart.addLineSeries({ color: '#d29922', lineWidth: 1.5 });
+  const macdEl = document.getElementById('chart-macd');
+  macdChart = LightweightCharts.createChart(macdEl, chartOpts(macdEl));
+  macdHist = macdChart.addHistogramSeries({ color: '#58a6ff' });
+  macdSig = macdChart.addLineSeries({ color: '#f85149', lineWidth: 1 });
+  const stochEl = document.getElementById('chart-stoch');
+  stochChart = LightweightCharts.createChart(stochEl, chartOpts(stochEl));
+  stochK = stochChart.addLineSeries({ color: '#58a6ff', lineWidth: 1.5 });
+  stochD = stochChart.addLineSeries({ color: '#f85149', lineWidth: 1 });
+  const atrEl = document.getElementById('chart-atr');
+  atrChart = LightweightCharts.createChart(atrEl, chartOpts(atrEl));
+  atrSeries = atrChart.addLineSeries({ color: '#3fb950', lineWidth: 1.5 });
+}
+
+function ts(unix) { return Math.floor(unix); }
+
+function loadBandSeries(data) {
+  if (!data || !data.length) return;
+  const p=[], u=[], l=[], s=[];
+  for (const d of data) { const t=ts(d.t); p.push({time:t,value:d.p}); u.push({time:t,value:d.upper}); l.push({time:t,value:d.lower}); s.push({time:t,value:d.sma}); }
+  priceSeries.setData(p); upperSeries.setData(u); lowerSeries.setData(l); smaSeries.setData(s);
+}
+
+async function loadHistory() {
+  try {
+    const [histRes, sigRes, compRes] = await Promise.all([
+      fetch('/api/history').then(r=>r.json()), fetch('/api/signals').then(r=>r.json()), fetch('/api/composite').then(r=>r.json()),
+    ]);
+    if (histRes.band_series) loadBandSeries(histRes.band_series);
+    for (const sig of (sigRes.signals||[])) { addSignalMarker(sig); addOldSignalRow(sig); }
+    for (const sig of (compRes.signals||[])) addCompRow(sig);
+    mainChart.timeScale().fitContent();
+  } catch(e) { console.error('Load error:', e); }
+}
+
+async function loadIndicatorHistory() {
+  if (!rsiChart) initIndicatorCharts();
+  try {
+    const res = await fetch('/api/indicators/history').then(r=>r.json());
+    const data = res.indicators || [];
+    const rD=[], mH=[], mS=[], sK=[], sD2=[], aD=[];
+    for (const d of data) {
+      const t = ts(d.unix_ts);
+      if (d.rsi_14!=null) rD.push({time:t,value:d.rsi_14});
+      if (d.macd_histogram!=null) mH.push({time:t,value:d.macd_histogram,color:d.macd_histogram>=0?'#3fb950':'#f85149'});
+      if (d.macd_signal!=null) mS.push({time:t,value:d.macd_signal});
+      if (d.stoch_k!=null) sK.push({time:t,value:d.stoch_k});
+      if (d.stoch_d!=null) sD2.push({time:t,value:d.stoch_d});
+      if (d.atr_14!=null) aD.push({time:t,value:d.atr_14});
+    }
+    rsiSeries.setData(rD); macdHist.setData(mH); macdSig.setData(mS);
+    stochK.setData(sK); stochD.setData(sD2); atrSeries.setData(aD);
+    rsiChart.timeScale().fitContent(); macdChart.timeScale().fitContent();
+    stochChart.timeScale().fitContent(); atrChart.timeScale().fitContent();
+    indicatorsLoaded = true;
+  } catch(e) { console.error('Indicator load error:', e); }
+}
+
+function addSignalMarker(sig) {
+  if (!sig) return;
+  markers.push({ time:ts(sig.unix_ts), position:sig.signal_type==='BUY'?'belowBar':'aboveBar', color:sig.signal_type==='BUY'?'#3fb950':'#f85149', shape:sig.signal_type==='BUY'?'arrowUp':'arrowDown', text:sig.signal_type });
+  markers.sort((a,b)=>a.time-b.time);
+  priceSeries.setMarkers(markers);
+}
+
+function updatePrice(snap) {
+  if (!snap) return;
+  document.getElementById('current-price').textContent = (snap.yes_price*100).toFixed(1)+'\u00a2';
+  document.getElementById('last-update').textContent = new Date(snap.timestamp||snap.unix_ts*1000).toLocaleTimeString();
+}
+
+function updateBanner(sig) {
+  const b = document.getElementById('signal-banner');
+  if (!sig) { b.className='signal-banner'; return; }
+  b.className = 'signal-banner '+sig.signal_type.toLowerCase();
+  document.getElementById('signal-type').textContent = sig.signal_type+' SIGNAL';
+  document.getElementById('signal-score').textContent = sig.composite_score?.toFixed(3)||'--';
+  document.getElementById('signal-conf').style.width = ((sig.confidence||0)*100)+'%';
+  document.getElementById('signal-regime').innerHTML = `<span class="regime-badge ${sig.regime||'unknown'}">${(sig.regime||'--').toUpperCase()}</span>`;
+  document.getElementById('signal-kelly').textContent = (sig.suggested_position_pct||0).toFixed(1)+'%';
+  document.getElementById('signal-reasoning').textContent = sig.reasoning||'';
+}
+
+function updateMetrics(snap, ind) {
+  if (ind && ind.bollinger_upper!=null && ind.bollinger_lower!=null) {
+    const pos = ind.bollinger_upper!==ind.bollinger_lower ? ((snap.yes_price-ind.bollinger_lower)/(ind.bollinger_upper-ind.bollinger_lower)*100) : 50;
+    const el=document.getElementById('m-bb'); el.textContent=pos.toFixed(0)+'%'; el.style.color=pos<30?'#3fb950':pos>70?'#f85149':'#d29922';
+    document.getElementById('m-bb-sub').textContent=`Z: ${ind.bollinger_z?.toFixed(2)||'--'}`;
+  }
+  if (ind && ind.rsi_14!=null) {
+    const el=document.getElementById('m-rsi'); el.textContent=ind.rsi_14.toFixed(1); el.style.color=ind.rsi_14<30?'#3fb950':ind.rsi_14>70?'#f85149':'#8b949e';
+    document.getElementById('m-rsi-sub').textContent=ind.rsi_14<30?'Oversold':ind.rsi_14>70?'Overbought':'Neutral';
+  }
+  if (ind && ind.macd_histogram!=null) {
+    const el=document.getElementById('m-macd'); el.textContent=(ind.macd_histogram*100).toFixed(2); el.style.color=ind.macd_histogram>0?'#3fb950':'#f85149';
+    document.getElementById('m-macd-sub').textContent=ind.macd_histogram>0?'Bullish':'Bearish';
+  }
+  if (snap) {
+    const imb=snap.imbalance||0; const el=document.getElementById('m-ob'); el.textContent=(imb>0?'+':'')+(imb*100).toFixed(1)+'%'; el.style.color=imb>0.05?'#3fb950':imb<-0.05?'#f85149':'#8b949e';
+    document.getElementById('m-ob-sub').textContent=`Spread: ${snap.spread?(snap.spread*10000).toFixed(0)+'bps':'--'}`;
+  }
+  if (ind) {
+    const badge=document.getElementById('regime-badge'); const regime=ind.regime||'unknown'; badge.className='regime-badge '+regime; badge.textContent=regime.toUpperCase().replace('_',' ');
+    const el=document.getElementById('m-regime'); el.textContent=regime.replace('_',' ').toUpperCase(); el.style.color=regime==='trending'?'#58a6ff':'#d29922';
+    document.getElementById('m-regime-sub').textContent=`ADX: ${ind.adx?.toFixed(1)||'--'} | Hurst: ${ind.hurst_exponent?.toFixed(2)||'--'}`;
+  }
+}
+
+function updateComponentBars(sig) {
+  if (!sig) return;
+  for (const [id, val] of [['mr',sig.mean_reversion_score],['mom',sig.momentum_score],['vol',sig.volatility_score],['of',sig.orderflow_score],['v',sig.volume_score]]) {
+    const v=val||0; const bar=document.getElementById('bar-'+id); const valEl=document.getElementById('val-'+id);
+    valEl.textContent=v.toFixed(2); valEl.style.color=v>0?'#3fb950':v<0?'#f85149':'#8b949e';
+    const pct=Math.abs(v)*50;
+    if (v>=0) { bar.style.left='50%'; bar.style.width=pct+'%'; bar.style.background='#3fb950'; }
+    else { bar.style.left=(50-pct)+'%'; bar.style.width=pct+'%'; bar.style.background='#f85149'; }
+  }
+}
+
+function updateRisk(r) {
+  if (!r) return;
+  const fmt=(v,d=2)=>v!=null?v.toFixed(d):'--';
+  const col=(v,good='high')=>{ if(v==null) return '#8b949e'; if(good==='high') return v>0?'#3fb950':'#f85149'; return v<0.1?'#3fb950':'#f85149'; };
+  document.getElementById('r-sharpe').textContent=fmt(r.sharpe_ratio); document.getElementById('r-sharpe').style.color=col(r.sharpe_ratio);
+  document.getElementById('r-sortino').textContent=fmt(r.sortino_ratio); document.getElementById('r-sortino').style.color=col(r.sortino_ratio);
+  document.getElementById('r-dd').textContent=r.max_drawdown!=null?(r.max_drawdown*100).toFixed(1)+'%':'--'; document.getElementById('r-dd').style.color=col(r.max_drawdown,'low');
+  document.getElementById('r-var').textContent=r.var_95!=null?(r.var_95*100).toFixed(2)+'\u00a2':'--';
+  document.getElementById('r-winrate').textContent=r.win_rate!=null?(r.win_rate*100).toFixed(0)+'%':'--'; document.getElementById('r-winrate').style.color=r.win_rate!=null&&r.win_rate>0.5?'#3fb950':'#f85149';
+  document.getElementById('r-avgprofit').textContent=r.avg_profit!=null?(r.avg_profit*100).toFixed(3)+'\u00a2':'--';
+  document.getElementById('r-kelly').textContent=r.kelly_fraction!=null?(r.kelly_fraction*100).toFixed(1)+'%':'--';
+  document.getElementById('r-total').textContent=r.total_signals||'0';
+}
+
+function addCompRow(sig) {
+  if (!sig) return;
+  const tbody=document.getElementById('comp-tbody'); const tr=document.createElement('tr'); tr.className=sig.signal_type.toLowerCase()+'-row';
+  tr.innerHTML=`<td>${sig.signal_type}</td><td>${sig.composite_score?.toFixed(3)||'--'}</td><td>${((sig.confidence||0)*100).toFixed(0)}%</td><td>${sig.regime||'--'}</td><td>${(sig.suggested_position_pct||0).toFixed(1)}%</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sig.reasoning||''}</td><td>${new Date(sig.timestamp||sig.unix_ts*1000).toLocaleTimeString()}</td>`;
+  tbody.insertBefore(tr,tbody.firstChild); while(tbody.children.length>50) tbody.removeChild(tbody.lastChild);
+}
+
+function addOldSignalRow(sig) {
+  if (!sig) return;
+  const tbody=document.getElementById('signal-tbody'); const tr=document.createElement('tr'); tr.className=sig.signal_type.toLowerCase()+'-row';
+  tr.innerHTML=`<td>${sig.signal_type}</td><td>${(sig.price_at_signal*100).toFixed(1)}\u00a2</td><td>${sig.z_score?.toFixed(2)||'--'}</td><td>${((sig.strength||0)*100).toFixed(0)}%</td><td>${((sig.imbalance||0)*100).toFixed(1)}%</td><td>${new Date(sig.timestamp||sig.unix_ts*1000).toLocaleTimeString()}</td>`;
+  tbody.insertBefore(tr,tbody.firstChild); while(tbody.children.length>50) tbody.removeChild(tbody.lastChild);
+}
+
+function appendMainChart(snap, ind) {
+  if (!snap) return;
+  const t=ts(snap.unix_ts); priceSeries.update({time:t,value:snap.yes_price});
+  if (ind) {
+    if(ind.bollinger_upper!=null) upperSeries.update({time:t,value:ind.bollinger_upper});
+    if(ind.bollinger_lower!=null) lowerSeries.update({time:t,value:ind.bollinger_lower});
+    if(ind.bollinger_sma!=null) smaSeries.update({time:t,value:ind.bollinger_sma});
+    if(ind.keltner_upper!=null) keltnerUp.update({time:t,value:ind.keltner_upper});
+    if(ind.keltner_lower!=null) keltnerLo.update({time:t,value:ind.keltner_lower});
+  }
+  if (indicatorsLoaded && ind) {
+    const t2=ts(ind.unix_ts||snap.unix_ts);
+    if(ind.rsi_14!=null) rsiSeries.update({time:t2,value:ind.rsi_14});
+    if(ind.macd_histogram!=null) macdHist.update({time:t2,value:ind.macd_histogram,color:ind.macd_histogram>=0?'#3fb950':'#f85149'});
+    if(ind.macd_signal!=null) macdSig.update({time:t2,value:ind.macd_signal});
+    if(ind.stoch_k!=null) stochK.update({time:t2,value:ind.stoch_k});
+    if(ind.stoch_d!=null) stochD.update({time:t2,value:ind.stoch_d});
+    if(ind.atr_14!=null) atrSeries.update({time:t2,value:ind.atr_14});
+  }
+}
+
+// ===== SSE =====
+function connectSSE() {
+  const dot=document.getElementById('status-dot'); const txt=document.getElementById('status-text');
+  const es=new EventSource('/events');
+  es.onopen=()=>{ dot.className='status-dot connected'; txt.textContent='Live'; };
+  es.onerror=()=>{ dot.className='status-dot disconnected'; txt.textContent='Reconnecting...'; };
+  es.onmessage=(e)=>{
+    try {
+      const d=JSON.parse(e.data);
+      updatePrice(d.snapshot); appendMainChart(d.snapshot,d.indicators); updateMetrics(d.snapshot,d.indicators);
+      updateBanner(d.signal); updateRisk(d.risk);
+      updateRecommendation(d.snapshot, d.indicators, d.signal, d.risk);
+      if(d.connected_clients!=null) document.getElementById('viewer-count').textContent=d.connected_clients;
+      if(d.signal) { addSignalMarker(d.signal); addCompRow(d.signal); updateComponentBars(d.signal); }
+      if(d.old_signal) addOldSignalRow(d.old_signal);
+    } catch(err) { console.error('SSE error:',err); }
+  };
+}
+
+window.addEventListener('resize',()=>{ mainChart.applyOptions({width:mainEl.clientWidth}); });
+
+loadHistory();
+connectSSE();
+</script>
+</body>
+</html>
